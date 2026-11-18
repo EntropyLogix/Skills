@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Zapisuje albo wczytuje handoff sesji Claude Code. „/handoff -save [polecenie]” zapisuje handoff bieżącej sesji (przechwytuje to hook, bez modelu). „/handoff” wczytuje jedyny zapisany handoff albo pokazuje listę zapisanych; argument to numer z listy, początek id sesji albo słowa z tytułu.
+description: Zapisuje albo wczytuje handoff sesji Claude Code. „/handoff -save [polecenie]” zapisuje handoff bieżącej sesji (przechwytuje to hook, bez modelu). „/handoff” pokazuje listę zapisanych handoffów do wyboru, także gdy jest jeden; argument to numer z listy, początek id sesji albo słowa z tytułu.
 argument-hint: "[-save polecenie | N | id | słowa]"
 disable-model-invocation: true
 allowed-tools: Bash(python3 __SKILL_DIR__/handoff.py:*)

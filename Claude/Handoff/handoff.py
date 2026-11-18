@@ -424,9 +424,7 @@ def cmd_load(self_sid, args):
         return
     query = " ".join(args).strip()
     if not query:
-        if len(rows) == 1:
-            return emit_handoff(rows[0], self_sid)
-        return print_list(rows, self_sid, "Kilka zapisanych handoffów — wybierz jeden.")
+        return print_list(rows, self_sid, "Zapisane handoffy — wybierz jeden.")
     by_sid = {r["sid"]: r for r in rows}
     if query.isdigit():
         shown = read_state()["lists"].get(self_sid) or [r["sid"] for r in rows[:LIST_LIMIT]]

@@ -15,7 +15,7 @@ dzięki temu zawsze widzi najświeższy stan, także sesji, która nadal działa
 | Gdzie | Polecenie | Efekt | Koszt modelu |
 |---|---|---|---|
 | sesja, którą chcesz potem kontynuować | `/handoff -save` albo `/handoff -save polecenie` | hook `UserPromptSubmit` blokuje prompt, zanim Claude Code uruchomi skill, zapisuje handoff z poleceniem na kontynuację i podgląd skrótu do `~/.claude/handoffs/<id>.md` | brak |
-| nowa sesja | `/handoff` | wczytuje jedyny zapisany handoff; przy kilku pokazuje ich listę; przy braku mówi, jak zapisać | tylko rozmiar skrótu |
+| nowa sesja | `/handoff` | pokazuje listę zapisanych handoffów do wyboru, także gdy jest jeden; nic nie wczytuje; przy braku mówi, jak zapisać | tylko rozmiar listy |
 | nowa sesja | `/handoff N` | wczytuje pozycję N z ostatnio pokazanej listy | j.w. |
 | nowa sesja | `/handoff a3c5` | wczytuje zapisany handoff po początku id sesji | j.w. |
 | nowa sesja | `/handoff słowa` | szuka słów w tytule, ostatnim prompcie, poleceniu na kontynuację, gałęzi i cwd zapisanych handoffów | j.w. |
@@ -54,8 +54,9 @@ nie wywołują modelu.
 
 ### Kilka równoległych sesji
 
-- Każda sesja ma własny zapisany handoff, więc przy kilku zapisach `/handoff`
-  pokazuje listę, od najświeższego zapisu.
+- Każda sesja ma własny zapisany handoff. `/handoff` zawsze pokazuje listę
+  (także z jedną pozycją), od najświeższego zapisu, żeby wczytanie było
+  świadomym wyborem.
 - Pozycja listy zawiera tytuł sesji, czas zapisu, początek id, gałąź, katalog
   roboczy (gdy jest inny niż bieżący), status sesji `● aktywna (nazwa)` albo
   `zamknięta` oraz polecenie na kontynuację. Status pochodzi z rejestru
@@ -176,11 +177,13 @@ Usuwa skill i wpis hooka. Zapisane handoffy zostają w `~/.claude/handoffs/`.
    odpowiedzi modelu powinien pojawić się komunikat „Bez wywołania modelu.
    Handoff zapisany…” ze ścieżką pliku `.md`. Komunikat zaczynający się od
    „HANDOFF ZAPISANY PRZEZ SKILL” oznacza, że hook nie działa.
-2. W nowej sesji wpisz `/handoff`. Model powinien w 2–4 zdaniach streścić
+2. W nowej sesji wpisz `/handoff`. Powinna pojawić się lista z tą sesją jako
+   pozycją 1. Wpisz `/handoff 1`: model powinien w 2–4 zdaniach streścić
    tamtą sesję i czekać na polecenie.
 3. Ponowne `/handoff` powie, że nie ma zapisanych handoffów, bo ten został już wczytany.
 
-Bez modelu, z terminala (wczytanie przez `load` też oznacza handoff jako zużyty):
+Bez modelu, z terminala (`load` bez argumentu tylko pokazuje listę; wczytanie
+pozycji, np. `load --self brak -- 1`, oznacza handoff jako zużyty):
 
 ```bash
 python3 ~/.claude/skills/handoff/handoff.py load --self brak --
@@ -203,8 +206,8 @@ python3 ~/.claude/skills/handoff/handoff.py save <pełne-id-sesji> polecenie na 
 - Claude Code domyślnie usuwa transkrypty starsze niż 30 dni
   (`cleanupPeriodDays`). Plik `.md` zapisany przez `/handoff -save` zostaje.
 - Hook `SessionEnd` nie jest używany celowo: transkrypt i tak jest kompletny,
-  a automatyczne przypinanie każdej sesji sprawiłoby, że `/handoff` bez
-  argumentu zawsze kończyłby się listą.
+  a automatyczne przypinanie każdej sesji zapełniłoby listę `/handoff`
+  sesjami, których nikt nie zamierzał kontynuować.
 - Argumenty `/handoff` trafiają do polecenia powłoki jako tekst. Znaki takie
   jak `$`, cudzysłowy czy nawiasy powodują odrzucenie polecenia przez kontrolę
   uprawnień Claude Code, więc w wyszukiwaniu używaj zwykłych słów.
