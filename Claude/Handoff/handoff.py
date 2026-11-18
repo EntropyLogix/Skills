@@ -27,8 +27,15 @@ REPLY_CAP_LAST = 6000
 REPLY_CAP_EARLIER = 1200
 SUMMARY_SECTION_CAP = 2500
 SUMMARY_SECTIONS = ("primary request", "pending tasks", "current work", "next step")
+EARLIER_SECTION = "current work"
+EARLIER_CAP = 500
+EARLIER_BUDGET = 12000
 CODE_KEEP_LINES = 6
 FILES_CAP = 40
+DOCS_CAP = 40
+DOC_EXTENSIONS = (".md", ".txt", ".tsv")
+TERM_RE = re.compile(r"\b[A-Za-z]{1,8}-?\d{2,}\b")
+RELATED_CAP = 8
 TAIL_BYTES = 2 * 1024 * 1024
 MODIFYING_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 
@@ -151,8 +158,8 @@ def tail_meta(path):
 
 
 def parse_transcript(path):
-    s = {"summary": None, "summary_ts": None, "files": {}, "exchanges": [], "bash": 0, "cwd": None, "branch": None,
-         "ts": None, "title": None}
+    s = {"summary": None, "summary_ts": None, "summaries": [], "files": {}, "exchanges": [], "bash": 0, "cwd": None,
+         "branch": None, "ts": None, "title": None}
     current = None
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -169,13 +176,14 @@ def parse_transcript(path):
             if entry.get("cwd"):
                 s["cwd"], s["branch"], s["ts"] = entry["cwd"], entry.get("gitBranch"), entry.get("timestamp")
             if is_clear(entry):
-                s.update(summary=None, summary_ts=None, files={}, exchanges=[], bash=0)
+                s.update(summary=None, summary_ts=None, summaries=[], files={}, exchanges=[], bash=0)
                 current = None
                 continue
             if kind == "user":
                 if entry.get("isCompactSummary"):
                     s["summary"] = compact_text(entry)
                     s["summary_ts"] = entry.get("timestamp")
+                    s["summaries"].append((s["summary_ts"], s["summary"]))
                     continue
                 text = user_text(entry)
                 if text:
@@ -236,6 +244,45 @@ def pick_summary(summary):
     return "\n\n".join(out)
 
 
+def summary_section(summary, key):
+    marks = list(SECTION_RE.finditer(summary))
+    for i, m in enumerate(marks):
+        if key in m.group(2).lower():
+            end = marks[i + 1].start() if i + 1 < len(marks) else len(summary)
+            return summary[m.end():end].split("If you need specific details from before compaction")[0].strip(" :\n")
+    return summary
+
+
+def earlier_summaries(summaries):
+    picked = []
+    used = 0
+    for ts, text in reversed(summaries[:-1]):
+        body = cap(shrink_code(summary_section(text, EARLIER_SECTION)), EARLIER_CAP)
+        if used + len(body) > EARLIER_BUDGET:
+            break
+        picked.append((ts, body))
+        used += len(body)
+    return list(reversed(picked)), len(summaries) - 1 - len(picked)
+
+
+def related_sessions(sid, s, note):
+    terms = {t.upper() for t in TERM_RE.findall(" ".join(filter(None, [s["title"], note])))}
+    if not terms:
+        return []
+    pins = read_state()["pins"]
+    rows = []
+    for other, path in all_transcripts().items():
+        if other == sid:
+            continue
+        meta = tail_meta(path)
+        haystack = " ".join(filter(None, [meta["title"], meta["last_prompt"], (pins.get(other) or {}).get("note")]))
+        found = sorted(t for t in terms if re.search(rf"\b{re.escape(t)}\b", haystack, re.IGNORECASE))
+        if found:
+            rows.append({"sid": other, "path": path, "terms": found, **meta})
+    rows.sort(key=lambda r: r["ts"] or "", reverse=True)
+    return rows[:RELATED_CAP]
+
+
 def short_path(fp, cwd):
     if cwd and fp.startswith(cwd.rstrip("/") + "/"):
         return fp[len(cwd.rstrip("/")) + 1:]
@@ -262,12 +309,30 @@ def render(sid, path, note=None, live=None):
     if s["summary"]:
         out += [f"## Skrót z ostatniego kompaktowania ({fmt_ts(s['summary_ts'])}; jeśli coś przeczy ostatnim wymianom niżej, wygrywają wymiany)",
                 pick_summary(s["summary"]), ""]
-    if s["files"]:
-        items = list(s["files"].items())[-FILES_CAP:]
-        out.append(f"## Pliki zmieniane w sesji (Edit/Write; ostatnio zmieniane na końcu; Bash: {s['bash']} wywołań)")
-        out += [f"- {short_path(fp, s['cwd'])} ×{n}" for fp, n in items]
-        if len(s["files"]) > FILES_CAP:
-            out.append(f"- … oraz {len(s['files']) - FILES_CAP} wcześniejszych")
+    earlier, skipped = earlier_summaries(s["summaries"])
+    if earlier:
+        out.append("## Chronologia wcześniejszych kompaktowań (sekcja Current Work; od najstarszej)")
+        if skipped:
+            out.append(f"- … pominięto {skipped} starszych kompaktowań (limit skrótu)")
+        for ts, body in earlier:
+            out += [f"### {fmt_ts(ts)}", body]
+        out.append("")
+    docs = {fp: n for fp, n in s["files"].items() if fp.lower().endswith(DOC_EXTENSIONS)}
+    code = {fp: n for fp, n in s["files"].items() if fp not in docs}
+    for title, group, limit in (("Dokumenty zapisane w sesji (raporty, noty; ostatnio zmieniane na końcu)", docs, DOCS_CAP),
+                                (f"Pliki zmieniane w sesji (Edit/Write; ostatnio zmieniane na końcu; Bash: {s['bash']} wywołań)", code, FILES_CAP)):
+        if not group:
+            continue
+        out.append(f"## {title}")
+        out += [f"- {short_path(fp, s['cwd'])} ×{n}" for fp, n in list(group.items())[-limit:]]
+        if len(group) > limit:
+            out.append(f"- … oraz {len(group) - limit} wcześniejszych")
+        out.append("")
+    related = related_sessions(sid, s, note)
+    if related:
+        out.append("## Powiązane sesje (wspólne identyfikatory z tytułu i polecenia; transkrypty czytać w razie potrzeby)")
+        for r in related:
+            out.append(f"- **{r['title'] or 'bez tytułu'}** · `{r['sid'][:8]}` · {fmt_ts(r['ts'])} · {', '.join(r['terms'])} · `{r['path']}`")
         out.append("")
     exchanges = s["exchanges"][-EXCHANGES:]
     if exchanges:

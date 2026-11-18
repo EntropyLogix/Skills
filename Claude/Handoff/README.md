@@ -72,15 +72,25 @@ nie wywołują modelu.
 - Z ostatniego kompaktowania tylko sekcje Primary Request, Pending Tasks,
   Current Work i Next Step, z datą i zastrzeżeniem, że późniejsze wymiany mają
   pierwszeństwo.
-- Pliki zmieniane narzędziami Edit/Write/MultiEdit/NotebookEdit (do 40,
-  ostatnio zmieniane na końcu) oraz liczba wywołań Bash.
+- Chronologia wcześniejszych kompaktowań: z każdego sekcja Current Work (do
+  500 znaków), od najstarszego. Łączny limit to 12 000 znaków; gdy się
+  wyczerpie, najstarsze kompaktowania są pomijane, a skrót podaje ich liczbę.
+- Dokumenty zapisane w sesji (`.md`, `.txt`, `.tsv`, do 40) jako osobna lista,
+  żeby raporty i noty nie ginęły wśród plików kodu.
+- Pozostałe pliki zmieniane narzędziami Edit/Write/MultiEdit/NotebookEdit (do
+  40, ostatnio zmieniane na końcu) oraz liczba wywołań Bash.
+- Powiązane sesje (do 8): inne transkrypty, których tytuł, ostatni prompt
+  albo polecenie zapisanego handoffu zawiera identyfikator z tytułu lub
+  polecenia bieżącego handoffu. Identyfikator to litery z co najmniej dwiema
+  cyframi, np. `B421` albo `JIRA-123`. Skrót podaje ścieżki transkryptów, a
+  nie ich treść.
 - Ostatnie 4 wymiany: prompt użytkownika i ostatnia odpowiedź Claude'a w danej
   turze. Ostatnia odpowiedź ma limit 6000 znaków, wcześniejsze 1200. Bloki kodu
   dłuższe niż 6 linii są zastępowane znacznikiem.
 - Ścieżka do pełnego transkryptu na wypadek, gdyby potrzebne były szczegóły.
 
-Przykładowo skrót sesji z transkryptem 423 MB ma około 4 tys. tokenów i
-powstaje w około 1,6 s. Hook przy każdym zwykłym prompcie kończy się w
+Przykładowo skrót sesji z transkryptem 479 MB i 39 kompaktowaniami ma około
+10 tys. tokenów (bez chronologii około 4,5 tys.) i powstaje w około 2,3 s. Hook przy każdym zwykłym prompcie kończy się w
 kilkadziesiąt milisekund.
 
 ## Wymagania
