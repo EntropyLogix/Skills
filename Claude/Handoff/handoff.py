@@ -15,6 +15,7 @@ STATE_PATH = os.path.join(HANDOFF_DIR, "state.json")
 LOCK_PATH = os.path.join(HANDOFF_DIR, "state.lock")
 
 SAVE_RE = re.compile(r"^\s*/handoff\s+-save\b:?\s*(?P<note>.*?)\s*$", re.IGNORECASE | re.DOTALL)
+LIST_RE = re.compile(r"^\s*/handoff\s*$", re.IGNORECASE)
 TAG_RE = re.compile(r"^\s*<([a-zA-Z_-]+)")
 SECTION_RE = re.compile(r"(?m)^\s*(\d+)\.\s+\*\*(.+?)\*\*")
 FENCE_RE = re.compile(r"```[^\n]*\n([\s\S]*?)```")
@@ -374,26 +375,31 @@ def age(mtime):
     return f"{minutes // 1440} dni temu"
 
 
-def print_row(i, r, cwd):
+def row_text(i, r, cwd):
     status = f"● aktywna ({r['live']['name']})" if r["live"] else "zamknięta"
     where = "" if r["cwd"] == cwd else f" · cwd {r['cwd']}"
-    print(f"{i}. **{r['title'] or 'bez tytułu'}** — zapisany {age(r['saved'])} · `{r['sid'][:8]}` · {r['branch']}{where} · sesja {status}")
-    print(f"   polecenie na kontynuację: {r['note'] or '(brak — model streści sesję i poczeka)'}")
+    return (f"{i}. **{r['title'] or 'bez tytułu'}** — zapisany {age(r['saved'])} · `{r['sid'][:8]}` · {r['branch']}{where} · sesja {status}\n"
+            f"   polecenie na kontynuację: {r['note'] or '(brak — model streści sesję i poczeka)'}")
+
+
+def list_text(rows, self_sid, header, cwd):
+    rows = rows[:LIST_LIMIT]
+    with_state(lambda st: st["lists"].__setitem__(self_sid, [r["sid"] for r in rows]))
+    first = rows[0]
+    words = " ".join(re.findall(r"\w+", (first["title"] or "").lower())[:2]) or "słowa z tytułu"
+    return "\n".join(["LISTA ZAPISANYCH HANDOFFÓW", header, ""] +
+                     [row_text(i, r, cwd) for i, r in enumerate(rows, 1)] +
+                     ["", f"Wczytanie pozycji 1: `/handoff 1`, `/handoff {first['sid'][:8]}` (id) albo `/handoff {words}` (słowa z tytułu)."])
 
 
 def print_list(rows, self_sid, header):
-    rows = rows[:LIST_LIMIT]
-    with_state(lambda st: st["lists"].__setitem__(self_sid, [r["sid"] for r in rows]))
-    cwd = os.getcwd()
-    print("LISTA ZAPISANYCH HANDOFFÓW")
-    print(header)
-    print()
-    for i, r in enumerate(rows, 1):
-        print_row(i, r, cwd)
-    print()
-    first = rows[0]
-    words = " ".join(re.findall(r"\w+", (first["title"] or "").lower())[:2]) or "słowa z tytułu"
-    print(f"Wczytanie pozycji 1: `/handoff 1`, `/handoff {first['sid'][:8]}` (id) albo `/handoff {words}` (słowa z tytułu).")
+    print(list_text(rows, self_sid, header, os.getcwd()))
+
+
+def no_handoffs_text():
+    return ("BRAK ZAPISANYCH HANDOFFÓW\n"
+            "Zapis: w sesji, którą chcesz potem kontynuować, wpisz `/handoff -save` albo "
+            "`/handoff -save polecenie na kontynuację`.")
 
 
 def emit_handoff(row, self_sid):
@@ -418,10 +424,7 @@ def cmd_load(self_sid, args):
         return print(save(self_sid, all_transcripts()[self_sid], note))
     rows = candidates(self_sid)
     if not rows:
-        print("BRAK ZAPISANYCH HANDOFFÓW")
-        print("Zapis: w sesji, którą chcesz potem kontynuować, wpisz `/handoff -save` albo "
-              "`/handoff -save polecenie na kontynuację`.")
-        return
+        return print(no_handoffs_text())
     query = " ".join(args).strip()
     if not query:
         return print_list(rows, self_sid, "Zapisane handoffy — wybierz jeden.")
@@ -459,11 +462,17 @@ def save(sid, path, note):
 
 def cmd_hook_prompt():
     data = json.load(sys.stdin)
-    m = SAVE_RE.match(data.get("prompt") or "")
-    if not m:
-        return
-    note = (m.group("note") or "").strip() or None
-    msg = "Bez wywołania modelu. " + save(data["session_id"], data["transcript_path"], note)
+    prompt = data.get("prompt") or ""
+    if LIST_RE.match(prompt):
+        rows = candidates(data["session_id"])
+        body = list_text(rows, data["session_id"], "Zapisane handoffy — wybierz jeden.", data["cwd"]) if rows else no_handoffs_text()
+        msg = "Bez wywołania modelu.\n\n" + body
+    else:
+        m = SAVE_RE.match(prompt)
+        if not m:
+            return
+        note = (m.group("note") or "").strip() or None
+        msg = "Bez wywołania modelu. " + save(data["session_id"], data["transcript_path"], note)
     print(json.dumps({"decision": "block", "reason": msg}, ensure_ascii=False))
 
 

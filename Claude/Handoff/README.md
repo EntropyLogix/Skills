@@ -2,7 +2,9 @@
 
 Globalny skill `/handoff` wczytuje do nowej sesji zwięzły skrót wcześniejszej
 sesji, zamiast wznawiać jej pełny kontekst. Zapis w starej sesji
-(`/handoff -save …`) przechwytuje hook, więc nie wywołuje modelu.
+(`/handoff -save …`) i lista zapisanych handoffów (`/handoff`) są obsługiwane
+przez hook, więc nie wywołują modelu. Model uruchamia się dopiero przy
+wczytaniu wybranej pozycji.
 
 ## Jak to działa
 
@@ -15,18 +17,21 @@ dzięki temu zawsze widzi najświeższy stan, także sesji, która nadal działa
 | Gdzie | Polecenie | Efekt | Koszt modelu |
 |---|---|---|---|
 | sesja, którą chcesz potem kontynuować | `/handoff -save` albo `/handoff -save polecenie` | hook `UserPromptSubmit` blokuje prompt, zanim Claude Code uruchomi skill, zapisuje handoff z poleceniem na kontynuację i podgląd skrótu do `~/.claude/handoffs/<id>.md` | brak |
-| nowa sesja | `/handoff` | pokazuje listę zapisanych handoffów do wyboru, także gdy jest jeden; nic nie wczytuje; przy braku mówi, jak zapisać | tylko rozmiar listy |
-| nowa sesja | `/handoff N` | wczytuje pozycję N z ostatnio pokazanej listy | j.w. |
+| nowa sesja | `/handoff` | hook blokuje prompt i pokazuje listę zapisanych handoffów do wyboru, także gdy jest jeden; nic nie wczytuje; przy braku mówi, jak zapisać | brak |
+| nowa sesja | `/handoff N` | wczytuje pozycję N z ostatnio pokazanej listy | tylko rozmiar skrótu |
 | nowa sesja | `/handoff a3c5` | wczytuje zapisany handoff po początku id sesji | j.w. |
 | nowa sesja | `/handoff słowa` | szuka słów w tytule, ostatnim prompcie, poleceniu na kontynuację, gałęzi i cwd zapisanych handoffów | j.w. |
 
 Zapis i wczytanie to jedno polecenie `/handoff`; pierwszy argument `-save`
 oznacza zapis. Myślnik sprawia, że zapisu nie da się pomylić z wyszukiwaniem
 po słowie. Hook dostaje surowy tekst promptu przed rozwinięciem skilla i
-blokuje go, więc skill w ogóle się nie uruchamia. Gdy hook nie jest
-zainstalowany albo jest wyłączony (`disableAllHooks`), `/handoff -save` trafia
-do skilla, który i tak zapisuje bieżącą sesję, ale przez model, i wyraźnie to
-zgłasza. Wynik jest poprawny, a jedyną stratą są tokeny.
+przechwytuje dwa polecenia: `/handoff -save …` oraz samo `/handoff` bez
+argumentu. Blokuje je, więc skill w ogóle się nie uruchamia. Polecenia z
+argumentem wyboru (`/handoff 1`, id, słowa) przepuszcza do skilla, bo
+wczytany skrót ma przeczytać model. Gdy hook nie jest zainstalowany albo jest
+wyłączony (`disableAllHooks`), oba przechwytywane polecenia trafiają do
+skilla, który daje ten sam wynik przez model; zapis wyraźnie to zgłasza.
+Wynik jest poprawny, a jedyną stratą są tokeny.
 
 `/handoff` wczytuje wyłącznie zapisane handoffy. Aby kontynuować starszą
 sesję, w której nie zrobiono zapisu, otwórz ją z historii sesji (VSCode albo
@@ -177,8 +182,9 @@ Usuwa skill i wpis hooka. Zapisane handoffy zostają w `~/.claude/handoffs/`.
    odpowiedzi modelu powinien pojawić się komunikat „Bez wywołania modelu.
    Handoff zapisany…” ze ścieżką pliku `.md`. Komunikat zaczynający się od
    „HANDOFF ZAPISANY PRZEZ SKILL” oznacza, że hook nie działa.
-2. W nowej sesji wpisz `/handoff`. Powinna pojawić się lista z tą sesją jako
-   pozycją 1. Wpisz `/handoff 1`: model powinien w 2–4 zdaniach streścić
+2. W nowej sesji wpisz `/handoff`. Zamiast odpowiedzi modelu powinien
+   pojawić się komunikat „Bez wywołania modelu.” z listą, w której ta sesja
+   jest pozycją 1. Wpisz `/handoff 1`: model powinien w 2–4 zdaniach streścić
    tamtą sesję i czekać na polecenie.
 3. Ponowne `/handoff` powie, że nie ma zapisanych handoffów, bo ten został już wczytany.
 
@@ -195,7 +201,7 @@ python3 ~/.claude/skills/handoff/handoff.py save <pełne-id-sesji> polecenie na 
 
 | Plik | Rola |
 |---|---|
-| `handoff.py` | parser transkryptów, zapis przez hook, lista zapisanych handoffów, wczytanie |
+| `handoff.py` | parser transkryptów, zapis i lista przez hook, wczytanie |
 | `SKILL.md.template` | definicja skilla `/handoff` z miejscem na ścieżkę |
 | `install.sh` | instalacja i `--uninstall` |
 | `~/.claude/handoffs/state.json` | zapisane handoffy, ich zużycie i ostatnio pokazane listy (tworzony w trakcie działania) |
