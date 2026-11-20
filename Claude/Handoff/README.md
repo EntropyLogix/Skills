@@ -1,33 +1,34 @@
 # Handoff — przenoszenie kontekstu między sesjami Claude Code
 
-Globalny skill `/handoff` wczytuje do nowej sesji zwięzły skrót wcześniejszej
-sesji, zamiast wznawiać jej pełny kontekst. Zapis w starej sesji
-(`/handoff -save …`) i lista zapisanych handoffów (`/handoff`) są obsługiwane
-przez hook, więc nie wywołują modelu. Model uruchamia się dopiero przy
-wczytaniu wybranej pozycji.
+Globalny skill `/handoff` wczytuje do nowej sesji zamrożony, zwięzły skrót
+wcześniejszej sesji, zamiast wznawiać jej pełny kontekst. Zapis w starej sesji
+(`/handoff -save …`) buduje paczkę od razu; lista zapisanych handoffów
+(`/handoff`) i zapis są obsługiwane przez hook, więc nie wywołują modelu. Model
+uruchamia się dopiero przy wczytaniu wybranej pozycji.
 
 ## Jak to działa
 
 Claude Code na bieżąco zapisuje każdą sesję do
 `~/.claude/projects/<katalog>/<id-sesji>.jsonl`. Ten transkrypt jest już
 automatycznym zrzutem sesji, więc nic nie trzeba zapisywać przy jej
-zamknięciu. `handoff.py` buduje z niego skrót dopiero w chwili wczytania i
-dzięki temu zawsze widzi najświeższy stan, także sesji, która nadal działa.
+zamknięciu. `handoff.py` buduje z niego snapshot w chwili zapisu i później
+wczytuje dokładnie ten snapshot, nawet jeśli sesja źródłowa nadal działa.
 
 | Gdzie | Polecenie | Efekt | Koszt modelu |
 |---|---|---|---|
-| sesja, którą chcesz potem kontynuować | `/handoff -save` albo `/handoff -save polecenie` | hook `UserPromptSubmit` blokuje prompt, zanim Claude Code uruchomi skill, zapisuje handoff z poleceniem na kontynuację i podgląd skrótu do `~/.claude/handoffs/<id>.md` | brak |
+| sesja, którą chcesz potem kontynuować | `/handoff -save` albo `/handoff -save polecenie` | hook `UserPromptSubmit` blokuje prompt, zanim Claude Code uruchomi skill, buduje handoff z poleceniem na kontynuację i zapisuje snapshot do `~/.claude/handoffs/<id>.md` | brak |
 | nowa sesja | `/handoff` | hook blokuje prompt i pokazuje listę zapisanych handoffów do wyboru, także gdy jest jeden; nic nie wczytuje; przy braku mówi, jak zapisać | brak |
-| nowa sesja | `/handoff N` | wczytuje pozycję N z ostatnio pokazanej listy | tylko rozmiar skrótu |
-| nowa sesja | `/handoff a3c5` | wczytuje zapisany handoff po początku id sesji | j.w. |
-| nowa sesja | `/handoff słowa` | szuka słów w tytule, ostatnim prompcie, poleceniu na kontynuację, gałęzi i cwd zapisanych handoffów | j.w. |
+| nowa sesja | `/handoff N` | wczytuje pozycję N z ostatnio pokazanej listy | rozmiar snapshotu |
+
+Nieprawidłowy, nieaktualny albo nieobecny numer pokazuje listę ponownie.
 
 Zapis i wczytanie to jedno polecenie `/handoff`; pierwszy argument `-save`
 oznacza zapis. Myślnik sprawia, że zapisu nie da się pomylić z wyszukiwaniem
 po słowie. Hook dostaje surowy tekst promptu przed rozwinięciem skilla i
 przechwytuje dwa polecenia: `/handoff -save …` oraz samo `/handoff` bez
-argumentu. Blokuje je, więc skill w ogóle się nie uruchamia. Polecenia z
-argumentem wyboru (`/handoff 1`, id, słowa) przepuszcza do skilla, bo
+argumentu. Blokuje je, więc skill w ogóle się nie uruchamia. Nieprawidłowe
+wybory również kończą się listą bez modelu. Prawidłowe polecenie z numerem
+wyboru (np. `/handoff 1`) przepuszcza do skilla, bo
 wczytany skrót ma przeczytać model. Gdy hook nie jest zainstalowany albo jest
 wyłączony (`disableAllHooks`), oba przechwytywane polecenia trafiają do
 skilla, który daje ten sam wynik przez model; zapis wyraźnie to zgłasza.
@@ -48,14 +49,12 @@ nie wywołują modelu.
   model pisze jedno lub dwa zdania o stanie sesji i od razu wykonuje
   polecenie. Bez polecenia (samo `/handoff -save`) model streszcza sesję i
   czeka.
-- To samo zdanie jest widoczne na liście zapisanych handoffów i przeszukiwane
-  przez `/handoff słowa`.
+- To samo zdanie jest widoczne na liście zapisanych handoffów.
 - Zapisany handoff jest ważny 14 dni. Po wczytaniu jest oznaczany jako zużyty
   i znika z `/handoff`, więc druga nowa sesja nie weźmie go ponownie. Aby
   wczytać go jeszcze raz, zrób ponownie `/handoff -save` w tamtej sesji.
-- `/handoff` buduje skrót z transkryptu w chwili wczytania, więc obejmuje też
-  pracę wykonaną po `/handoff -save …`. Plik `.md` jest tylko podglądem stanu
-  z chwili zapisu.
+- `/handoff` wczytuje snapshot z chwili `/handoff -save …`. Praca wykonana
+  później w sesji źródłowej nie zmienia już tej paczki.
 
 ### Kilka równoległych sesji
 
@@ -66,8 +65,8 @@ nie wywołują modelu.
   roboczy (gdy jest inny niż bieżący), status sesji `● aktywna (nazwa)` albo
   `zamknięta` oraz polecenie na kontynuację. Status pochodzi z rejestru
   `~/.claude/sessions` ze sprawdzeniem, czy proces żyje.
-- Przy wczytaniu sesji, która nadal działa, skrót zaczyna się ostrzeżeniem, że
-  jej późniejsze zmiany nie są w nim uwzględnione.
+- Przy wczytaniu snapshotu z sesji, która nadal działa, pojawia się ostrzeżenie,
+  że paczka pochodzi z chwili zapisu.
 - Transkrypty są szukane we wszystkich `~/.claude/projects/*/`, bo sesja mogła
   być uruchomiona w innym katalogu niż bieżący. Widoczne są tylko sesje z tej
   maszyny i tego katalogu konfiguracji.
@@ -214,8 +213,7 @@ python3 ~/.claude/skills/handoff/handoff.py save <pełne-id-sesji> polecenie na 
 - Hook `SessionEnd` nie jest używany celowo: transkrypt i tak jest kompletny,
   a automatyczne przypinanie każdej sesji zapełniłoby listę `/handoff`
   sesjami, których nikt nie zamierzał kontynuować.
-- Argumenty `/handoff` trafiają do polecenia powłoki jako tekst. Znaki takie
-  jak `$`, cudzysłowy czy nawiasy powodują odrzucenie polecenia przez kontrolę
-  uprawnień Claude Code, więc w wyszukiwaniu używaj zwykłych słów.
+- Wczytanie przyjmuje wyłącznie numer pozycji z ostatnio pokazanej listy.
+  Nieprawidłowy numer wraca do listy.
 - Format transkryptu nie jest publicznym kontraktem Claude Code. Po
   aktualizacji, która go zmieni, parser może wymagać poprawki.

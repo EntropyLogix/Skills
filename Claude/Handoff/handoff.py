@@ -16,6 +16,7 @@ LOCK_PATH = os.path.join(HANDOFF_DIR, "state.lock")
 
 SAVE_RE = re.compile(r"^\s*/handoff\s+-save\b:?\s*(?P<note>.*?)\s*$", re.IGNORECASE | re.DOTALL)
 LIST_RE = re.compile(r"^\s*/handoff\s*$", re.IGNORECASE)
+HANDOFF_RE = re.compile(r"^\s*/handoff(?:\s|$)", re.IGNORECASE)
 TAG_RE = re.compile(r"^\s*<([a-zA-Z_-]+)")
 SECTION_RE = re.compile(r"(?m)^\s*(\d+)\.\s+\*\*(.+?)\*\*")
 FENCE_RE = re.compile(r"```[^\n]*\n([\s\S]*?)```")
@@ -300,7 +301,7 @@ def fmt_ts(ts):
 def render(sid, path, note=None, live=None):
     s = parse_transcript(path)
     out = [f"# HANDOFF — {s['title'] or 'sesja bez tytułu'}", ""]
-    status = f"aktywna ({live['name']})" if live else "zamknięta"
+    status = f"aktywna ({live['name']})" if live else "snapshot"
     out.append(f"- Sesja: `{sid}` · {status}")
     out.append(f"- cwd: `{s['cwd']}` · gałąź: `{s['branch']}` · ostatnia aktywność: {fmt_ts(s['ts'])}")
     out.append(f"- Transkrypt (pełne szczegóły, czytać tylko w razie potrzeby): `{path}`")
@@ -386,10 +387,9 @@ def list_text(rows, self_sid, header, cwd):
     rows = rows[:LIST_LIMIT]
     with_state(lambda st: st["lists"].__setitem__(self_sid, [r["sid"] for r in rows]))
     first = rows[0]
-    words = " ".join(re.findall(r"\w+", (first["title"] or "").lower())[:2]) or "słowa z tytułu"
     return "\n".join(["LISTA ZAPISANYCH HANDOFFÓW", header, ""] +
                      [row_text(i, r, cwd) for i, r in enumerate(rows, 1)] +
-                     ["", f"Wczytanie pozycji 1: `/handoff 1`, `/handoff {first['sid'][:8]}` (id) albo `/handoff {words}` (słowa z tytułu)."])
+                     ["", "Wczytanie pozycji wybiera się numerem z tej listy, np. `/handoff 1`."])
 
 
 def print_list(rows, self_sid, header):
@@ -403,7 +403,12 @@ def no_handoffs_text():
 
 
 def emit_handoff(row, self_sid):
-    text, _ = render(row["sid"], row["path"], row.get("note"), row.get("live"))
+    snapshot = os.path.join(HANDOFF_DIR, f"{row['sid']}.md")
+    try:
+        with open(snapshot, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return print(f"BRAK ZAPISANEGO SNAPSHOTA — {snapshot}")
 
     def mark(st):
         pin = st["pins"].get(row["sid"])
@@ -412,7 +417,7 @@ def emit_handoff(row, self_sid):
             pin["consumed_at"] = now_iso()
     with_state(mark)
     if row.get("live"):
-        print(f"UWAGA: sesja źródłowa nadal działa ({row['live']['name']}); jej dalsze zmiany nie są w tym skrócie.\n")
+        print(f"UWAGA: sesja źródłowa nadal działa ({row['live']['name']}); snapshot pochodzi z chwili zapisu.\n")
     print(text)
     print(f"[handoff: ~{len(text) // 3} tokenów]")
 
@@ -428,19 +433,15 @@ def cmd_load(self_sid, args):
     query = " ".join(args).strip()
     if not query:
         return print_list(rows, self_sid, "Zapisane handoffy — wybierz jeden.")
-    by_sid = {r["sid"]: r for r in rows}
-    if query.isdigit():
-        shown = read_state()["lists"].get(self_sid) or [r["sid"] for r in rows[:LIST_LIMIT]]
-        idx = int(query) - 1
-        if 0 <= idx < len(shown) and shown[idx] in by_sid:
-            return emit_handoff(by_sid[shown[idx]], self_sid)
-        return print_list(rows, self_sid, f"Nie ma pozycji {query} — aktualne zapisane handoffy:")
-    words = query.casefold().split()
-    hits = [r for r in rows if r["sid"].startswith(query.lower())
-            or all(w in " ".join(str(r[k] or "") for k in ("title", "last_prompt", "note", "branch", "cwd")).casefold() for w in words)]
-    if len(hits) == 1:
-        return emit_handoff(hits[0], self_sid)
-    return print_list(hits or rows, self_sid, f"Pasujące do „{query}”:" if hits else f"Nic nie pasuje do „{query}” — wszystkie zapisane handoffy:")
+    if not query.isdigit():
+        return print_list(rows, self_sid, "Nieprawidłowy wybór — aktualne zapisane handoffy:")
+    shown = read_state()["lists"].get(self_sid) or [r["sid"] for r in rows[:LIST_LIMIT]]
+    idx = int(query) - 1
+    if 0 <= idx < len(shown):
+        row = next((r for r in rows if r["sid"] == shown[idx]), None)
+        if row:
+            return emit_handoff(row, self_sid)
+    return print_list(rows, self_sid, f"Nie ma pozycji {query} — aktualne zapisane handoffy:")
 
 
 def save(sid, path, note):
@@ -470,7 +471,17 @@ def cmd_hook_prompt():
     else:
         m = SAVE_RE.match(prompt)
         if not m:
-            return
+            if not HANDOFF_RE.match(prompt):
+                return
+            args = prompt.strip().split()[1:]
+            rows = candidates(data["session_id"])
+            if args and args[0].isdigit():
+                shown = read_state()["lists"].get(data["session_id"]) or [r["sid"] for r in rows[:LIST_LIMIT]]
+                idx = int(args[0]) - 1
+                if 0 <= idx < len(shown) and any(r["sid"] == shown[idx] for r in rows):
+                    return
+            body = list_text(rows, data["session_id"], "Nieprawidłowy wybór — aktualne zapisane handoffy:", data["cwd"]) if rows else no_handoffs_text()
+            return print(json.dumps({"decision": "block", "reason": "Bez wywołania modelu.\n\n" + body}, ensure_ascii=False))
         note = (m.group("note") or "").strip() or None
         msg = "Bez wywołania modelu. " + save(data["session_id"], data["transcript_path"], note)
     print(json.dumps({"decision": "block", "reason": msg}, ensure_ascii=False))
@@ -479,7 +490,7 @@ def cmd_hook_prompt():
 def main():
     argv = sys.argv[1:]
     if not argv:
-        sys.exit("użycie: handoff.py load --self SID -- [-save polecenie | zapytanie] | hook-prompt | save SID [polecenie] | show SID")
+        sys.exit("użycie: handoff.py load --self SID -- [-save polecenie | numer] | hook-prompt | save SID [polecenie] | show SID")
     cmd = argv[0]
     if cmd == "hook-prompt":
         return cmd_hook_prompt()
@@ -495,7 +506,12 @@ def main():
         return print(save(sid, all_transcripts()[sid], " ".join(argv[2:]) or None))
     if cmd == "show":
         sid = argv[1]
-        return print(render(sid, all_transcripts()[sid], None, live_sessions().get(sid))[0])
+        snapshot = os.path.join(HANDOFF_DIR, f"{sid}.md")
+        try:
+            with open(snapshot, encoding="utf-8") as f:
+                return print(f.read())
+        except OSError:
+            sys.exit(f"nie znaleziono zapisanego snapshotu: {snapshot}")
     sys.exit(f"nieznana komenda: {cmd}")
 
 
