@@ -1,6 +1,6 @@
-# Codex Handoff
+# Handoff — Codex
 
-Globalny skill `codex-handoff` przenosi odchudzony snapshot między lokalnymi sesjami Codex. Snapshot jest budowany w chwili `/handoff -save` i pozostaje niezmienny. Przy wczytaniu do nowej sesji trafiają tylko wybrane wiadomości i metadane; wyniki narzędzi nie są kopiowane.
+Globalny skill `handoff` przenosi odchudzony snapshot między lokalnymi sesjami Codex. Snapshot jest budowany w chwili `/handoff -save` i pozostaje niezmienny. Przy wczytaniu do nowej sesji trafiają tylko wybrane wiadomości i metadane; wyniki narzędzi nie są kopiowane.
 
 ## Polecenia
 
@@ -21,7 +21,7 @@ Każda sesja ma jeden snapshot. Kolejny zapis go zastępuje. Snapshot jest widoc
 /config/workspace/Skills/Codex/Handoff/install.sh
 ```
 
-Instalator kopiuje skill do `$HOME/.agents/skills/codex-handoff/` i dopisuje hook `UserPromptSubmit` do `$CODEX_HOME/hooks.json`. Po instalacji otwórz `/hooks` w Codex i zaufaj hookowi. Nowe sesje zobaczą konfigurację po ponownym uruchomieniu.
+Instalator kopiuje skill do `$HOME/.agents/skills/handoff/` i dopisuje hook `UserPromptSubmit` do `$CODEX_HOME/hooks.json`. Po instalacji otwórz `/hooks` w Codex i zaufaj hookowi. Nowe sesje zobaczą konfigurację po ponownym uruchomieniu.
 
 Odinstalowanie:
 

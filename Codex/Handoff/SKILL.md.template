@@ -1,5 +1,5 @@
 ---
-name: codex-handoff
+name: handoff
 description: Zapisuje zamrożony, odchudzony wyciąg sesji Codex i wczytuje go do nowej sesji numerem z listy; używaj przy przekazywaniu pracy między sesjami, zapisywaniu stanu i kontynuowaniu zadania.
 ---
 
