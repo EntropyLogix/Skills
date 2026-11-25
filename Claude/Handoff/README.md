@@ -17,10 +17,16 @@ wczytuje dokładnie ten snapshot, nawet jeśli sesja źródłowa nadal działa.
 | Gdzie | Polecenie | Efekt | Koszt modelu |
 |---|---|---|---|
 | sesja, którą chcesz potem kontynuować | `/handoff -save` albo `/handoff -save polecenie` | hook `UserPromptSubmit` blokuje prompt, zanim Claude Code uruchomi skill, buduje handoff z poleceniem na kontynuację i zapisuje snapshot do `~/.claude/handoffs/<id>.md` | brak |
-| nowa sesja | `/handoff` | hook blokuje prompt i pokazuje listę zapisanych handoffów do wyboru, także gdy jest jeden; nic nie wczytuje; przy braku mówi, jak zapisać | brak |
+| nowa sesja | `/handoff` | hook blokuje prompt i pokazuje listę zapisanych handoffów do wyboru, także gdy jest jeden, z rozmiarem snapshotu (KB i szacunek tokenów); nic nie wczytuje; przy braku mówi, jak zapisać | brak |
 | nowa sesja | `/handoff N` | wczytuje pozycję N z ostatnio pokazanej listy | rozmiar snapshotu |
 
 Nieprawidłowy, nieaktualny albo nieobecny numer pokazuje listę ponownie.
+
+Szacunek tokenów to liczba znaków podzielona przez 2. Taki stosunek wyszedł
+z pomiaru na transkryptach (przyrost `usage` po dużych wynikach narzędzi): polski
+markdown ma medianę 2,0 znaku na token (p10–p90: 1,9–2,2), kod i angielski 2,3.
+Dokładne liczenie wymaga endpointu API `count_tokens`, więc offline podawany
+jest tylko szacunek.
 
 Zapis i wczytanie to jedno polecenie `/handoff`; pierwszy argument `-save`
 oznacza zapis. Myślnik sprawia, że zapisu nie da się pomylić z wyszukiwaniem

@@ -39,6 +39,7 @@ DOC_EXTENSIONS = (".md", ".txt", ".tsv")
 TERM_RE = re.compile(r"\b[A-Za-z]{1,8}-?\d{2,}\b")
 RELATED_CAP = 8
 TAIL_BYTES = 2 * 1024 * 1024
+CHARS_PER_TOKEN = 2
 MODIFYING_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 
 
@@ -362,9 +363,21 @@ def candidates(self_sid):
             continue
         path = transcripts[sid]
         rows.append({"sid": sid, "path": path, "saved": pin["saved_epoch"], "note": pin.get("note"),
-                     "live": live.get(sid), **tail_meta(path)})
+                     "live": live.get(sid), "size": snapshot_size(sid), **tail_meta(path)})
     rows.sort(key=lambda r: -r["saved"])
     return rows
+
+
+def size_text(text):
+    return f"{len(text.encode('utf-8')) / 1024:.1f} KB, ~{len(text) // CHARS_PER_TOKEN} tokenów"
+
+
+def snapshot_size(sid):
+    try:
+        with open(os.path.join(HANDOFF_DIR, f"{sid}.md"), encoding="utf-8") as f:
+            return size_text(f.read())
+    except OSError:
+        return "brak snapshotu"
 
 
 def age(mtime):
@@ -379,7 +392,7 @@ def age(mtime):
 def row_text(i, r, cwd):
     status = f"● aktywna ({r['live']['name']})" if r["live"] else "zamknięta"
     where = "" if r["cwd"] == cwd else f" · cwd {r['cwd']}"
-    return (f"{i}. **{r['title'] or 'bez tytułu'}** — zapisany {age(r['saved'])} · `{r['sid'][:8]}` · {r['branch']}{where} · sesja {status}\n"
+    return (f"{i}. **{r['title'] or 'bez tytułu'}** — zapisany {age(r['saved'])} · {r['size']} · `{r['sid'][:8]}` · {r['branch']}{where} · sesja {status}\n"
             f"   polecenie na kontynuację: {r['note'] or '(brak — model streści sesję i poczeka)'}")
 
 
@@ -419,7 +432,7 @@ def emit_handoff(row, self_sid):
     if row.get("live"):
         print(f"UWAGA: sesja źródłowa nadal działa ({row['live']['name']}); snapshot pochodzi z chwili zapisu.\n")
     print(text)
-    print(f"[handoff: ~{len(text) // 3} tokenów]")
+    print(f"[handoff: {size_text(text)}]")
 
 
 def cmd_load(self_sid, args):
@@ -456,7 +469,7 @@ def save(sid, path, note):
     def pin(st):
         st["pins"][sid] = {"note": note, "saved_at": now_iso(), "saved_epoch": time.time(), "consumed_by": None}
     with_state(pin)
-    return (f"Handoff zapisany (~{len(text) // 3} tokenów): {md}\n"
+    return (f"Handoff zapisany ({size_text(text)}): {md}\n"
             f"Tytuł: {s['title']}" + (f" · polecenie na kontynuację: {note}" if note else "") +
             "\nW nowej sesji: /handoff")
 
