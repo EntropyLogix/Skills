@@ -39,6 +39,15 @@ The snapshot contains selected conversation context and session metadata. Tool
 outputs and long code blocks are reduced or omitted so that the next session
 receives a focused context.
 
+### Wakeup for Codex
+
+[`Codex/Wakeup`](Codex/Wakeup/) arms one exact message for an active Codex
+session and sends it after the session reaches a five-hour or weekly usage
+limit and that limit resets. Use `/wakeup <message>` to arm it, `/wakeup` to
+inspect it, and `/wakeup stop` to cancel it. The implementation uses the
+exact session UUID and the official `codex queue` command. It does not create,
+resume, or modify Goals and does not create Handoff snapshots.
+
 ## Why the implementations are separate
 
 Claude Code and Codex expose different skill discovery paths, hook
@@ -96,6 +105,22 @@ To remove the integration, run:
 ./Codex/Handoff/install.sh --uninstall
 ```
 
+To install Wakeup for Codex, run:
+
+```bash
+./Codex/Wakeup/install.sh
+```
+
+This adds a separate `UserPromptSubmit` hook and starts a local watcher. Set
+`CODEX_WAKEUP_SKILL_DIR` to use another installation directory. The watcher
+must remain running while the Codex session waits for its usage limit to reset.
+
+Remove Wakeup with:
+
+```bash
+./Codex/Wakeup/install.sh --uninstall
+```
+
 ## Requirements
 
 - Python 3.8 or newer
@@ -120,6 +145,12 @@ Codex/Handoff/
 ├── install.sh           # Codex installer and uninstaller
 ├── SKILL.md             # Codex skill definition
 └── README.md            # Codex documentation
+
+Codex/Wakeup/
+├── wakeup.py            # Wakeup hook and reset watcher
+├── install.sh           # Codex installer and uninstaller
+├── SKILL.md             # Codex skill definition
+└── README.md            # Codex Wakeup documentation
 ```
 
 The platform directories contain the detailed implementation notes and
