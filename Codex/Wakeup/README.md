@@ -7,14 +7,14 @@ The current session can keep working after the command is entered.
 ## Commands
 
 ```text
-/wakeup Work on B1234
-/wakeup
-/wakeup stop
+$wakeup Work on B1234
+$wakeup
+$wakeup stop
 ```
 
-`/wakeup <message>` stores the message against the current session UUID. The
-watcher waits for a reached limit, reads the reset time from the session
-transcript, and sends the message with:
+`$wakeup <message>` stores the message against the current session UUID. Codex
+uses `$` for installed skills. The watcher waits for a reached limit, reads the
+reset time from the session transcript, and sends the message with:
 
 ```bash
 codex queue --thread <exact-session-uuid> --message "<message>"

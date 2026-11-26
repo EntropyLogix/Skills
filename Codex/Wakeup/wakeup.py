@@ -21,7 +21,10 @@ POLL_SECONDS = 30
 MESSAGE_LIMIT = 8000
 RETRY_DELAYS = (60, 300, 900)
 MAX_ATTEMPTS = len(RETRY_DELAYS) + 1
-WAKEUP_RE = re.compile(r"^\s*/wakeup(?:\s+(?P<argument>[\s\S]*?))?\s*$", re.IGNORECASE)
+WAKEUP_RE = re.compile(
+    r"^\s*(?:\$wakeup|/wakeup)(?:\s+(?P<argument>[\s\S]*?))?\s*$",
+    re.IGNORECASE,
+)
 
 
 def now_iso():
