@@ -58,7 +58,11 @@ start_watcher() {
     fi
     rm -f "$pid_file"
   fi
-  nohup python3 "$SKILL_DIR/wakeup.py" watch >> "$CODEX_DIR/wakeup/watcher.log" 2>&1 < /dev/null &
+  if command -v setsid >/dev/null 2>&1; then
+    setsid nohup python3 "$SKILL_DIR/wakeup.py" watch >> "$CODEX_DIR/wakeup/watcher.log" 2>&1 < /dev/null &
+  else
+    nohup python3 "$SKILL_DIR/wakeup.py" watch >> "$CODEX_DIR/wakeup/watcher.log" 2>&1 < /dev/null &
+  fi
 }
 
 case "${1:-}" in
