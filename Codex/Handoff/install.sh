@@ -9,7 +9,7 @@ HOOKS="$CODEX_DIR/hooks.json"
 HOOK_CMD="python3 $SKILL_DIR/handoff.py hook-prompt"
 
 usage() {
-  echo "użycie: $0 [--uninstall]"
+  echo "usage: $0 [--uninstall]"
   exit 1
 }
 
@@ -49,10 +49,10 @@ PY
 
 case "${1:-}" in
   "")
-    command -v python3 >/dev/null || { echo "brak python3"; exit 1; }
+    command -v python3 >/dev/null || { echo "python3 is required"; exit 1; }
     mkdir -p "$SKILL_DIR"
     install -m 0755 "$SRC_DIR/handoff.py" "$SKILL_DIR/handoff.py"
-    sed "s#__SKILL_DIR__#$SKILL_DIR#g" "$SRC_DIR/SKILL.md.template" > "$SKILL_DIR/SKILL.md"
+    install -m 0644 "$SRC_DIR/SKILL.md" "$SKILL_DIR/SKILL.md"
     edit_hooks install
     python3 - "$LEGACY_SKILL_DIR" "$SKILL_DIR" <<'PY'
 import shutil
@@ -63,9 +63,9 @@ legacy, current = map(Path, sys.argv[1:])
 if legacy != current and legacy.exists():
     shutil.rmtree(legacy)
 PY
-    echo "zainstalowano skill: $SKILL_DIR"
-    echo "hook UserPromptSubmit: $HOOK_CMD"
-    echo "otwórz /hooks w Codex, aby zaufać nowemu hookowi"
+    echo "installed skill: $SKILL_DIR"
+    echo "UserPromptSubmit hook: $HOOK_CMD"
+    echo "open /hooks in Codex to trust the new hook"
     ;;
   --uninstall)
     edit_hooks uninstall
@@ -78,7 +78,7 @@ for path in map(Path, sys.argv[1:]):
     if path.exists():
         shutil.rmtree(path)
 PY
-    echo "usunięto skill i hook; zamrożone handovery zostają w $CODEX_DIR/handoffs"
+    echo "removed skill and hook; saved handoffs remain in $CODEX_DIR/handoffs"
     ;;
   *)
     usage

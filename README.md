@@ -119,7 +119,6 @@ Codex/Handoff/
 ├── handoff.py          # Transcript parser and snapshot manager
 ├── install.sh           # Codex installer and uninstaller
 ├── SKILL.md             # Codex skill definition
-├── SKILL.md.template    # Source template
 └── README.md            # Codex documentation
 ```
 

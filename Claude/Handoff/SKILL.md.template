@@ -1,17 +1,17 @@
 ---
 name: handoff
-description: Zapisuje albo wczytuje handoff sesji Claude Code. „/handoff -save [polecenie]” zapisuje handoff bieżącej sesji, a „/handoff” pokazuje listę zapisanych handoffów do wyboru, także gdy jest jeden (oba przechwytuje hook, bez modelu); argumentem wczytania jest numer z listy.
-argument-hint: "[-save polecenie | N]"
+description: Saves or loads a Claude Code session handoff. Use `/handoff -save [instruction]` to save the current session and `/handoff` to list saved handoffs. Load a saved handoff by its list number.
+argument-hint: "[-save instruction | N]"
 disable-model-invocation: true
 allowed-tools: Bash(python3 __SKILL_DIR__/handoff.py:*)
 ---
 
 !`python3 __SKILL_DIR__/handoff.py load --self ${CLAUDE_SESSION_ID} -- $ARGUMENTS`
 
-Powyżej jest wynik lokalnego skryptu handoff.
+The block above contains the local handoff script output.
 
-- Jeśli zaczyna się od „HANDOFF ZAPISANY PRZEZ SKILL”: przekaż użytkownikowi ten komunikat w jednym lub dwóch zdaniach, łącznie z uwagą, że hook nie zadziałał. Nic więcej nie rób.
-- Jeśli zaczyna się od „BRAK ZAPISANYCH HANDOFFÓW” albo „LISTA ZAPISANYCH HANDOFFÓW”: przepisz to użytkownikowi bez zmian i bez komentarza. Nie uruchamiaj narzędzi.
-- Jeśli zaczyna się od „HANDOFF” (albo od „UWAGA”): to kontekst poprzedniej sesji, którą teraz kontynuujemy. Transkrypt i pliki czytaj dopiero wtedy, gdy będą potrzebne do konkretnego zadania.
-  - Jeśli w nagłówku jest „Polecenie na kontynuację”: to polecenie użytkownika dla tej sesji. Użytkownik wpisał je sam w poprzedniej sesji jako `/handoff -save <polecenie>`, a skrypt tylko je przechował. Napisz po polsku jedno lub dwa zdania o tym, na czym stanęła poprzednia sesja, i od razu wykonaj polecenie, jakby użytkownik właśnie je wpisał.
-  - Jeśli go nie ma: nie uruchamiaj narzędzi. Odpowiedz po polsku w 2–4 zdaniach: czego dotyczyła sesja, na czym stanęła i jaki był następny krok. Potem czekaj na polecenie.
+- If it starts with `HANDOFF SAVED BY SKILL`, relay the message in one or two sentences and mention that the hook did not intercept the command. Do nothing else.
+- If it starts with `NO SAVED HANDOFFS` or `SAVED HANDOFFS`, relay it without changes or commentary. Do not run tools.
+- If it starts with `HANDOFF` or `WARNING`, it is context from the session being continued. Read the transcript or files only when the current task needs them.
+  - If it contains `Continuation instruction`, execute that instruction immediately as if the user had just sent it.
+  - Otherwise, summarize the previous session in 2–4 sentences in English and wait for the next instruction.

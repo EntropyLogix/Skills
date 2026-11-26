@@ -220,7 +220,7 @@ def shrink_code(text):
         n = body.count("\n")
         if n <= CODE_KEEP_LINES:
             return m.group(0)
-        return f"[blok kodu, {n} linii — pominięty]"
+        return f"[code block, {n} lines omitted]"
     return FENCE_RE.sub(repl, text)
 
 
@@ -228,7 +228,7 @@ def cap(text, limit):
     if len(text) <= limit:
         return text
     head = int(limit * 0.7)
-    return text[:head].rstrip() + f"\n[… pominięto {len(text) - limit} znaków …]\n" + text[-(limit - head):].lstrip()
+    return text[:head].rstrip() + f"\n[… {len(text) - limit} characters omitted …]\n" + text[-(limit - head):].lstrip()
 
 
 def pick_summary(summary):
@@ -301,52 +301,52 @@ def fmt_ts(ts):
 
 def render(sid, path, note=None, live=None):
     s = parse_transcript(path)
-    out = [f"# HANDOFF — {s['title'] or 'sesja bez tytułu'}", ""]
-    status = f"aktywna ({live['name']})" if live else "snapshot"
-    out.append(f"- Sesja: `{sid}` · {status}")
-    out.append(f"- cwd: `{s['cwd']}` · gałąź: `{s['branch']}` · ostatnia aktywność: {fmt_ts(s['ts'])}")
-    out.append(f"- Transkrypt (pełne szczegóły, czytać tylko w razie potrzeby): `{path}`")
+    out = [f"# HANDOFF — {s['title'] or 'untitled session'}", ""]
+    status = f"active ({live['name']})" if live else "snapshot"
+    out.append(f"- Session: `{sid}` · {status}")
+    out.append(f"- cwd: `{s['cwd']}` · branch: `{s['branch']}` · last activity: {fmt_ts(s['ts'])}")
+    out.append(f"- Transcript (read for full details only when needed): `{path}`")
     if note:
-        out.append(f"- Polecenie na kontynuację (od użytkownika): **{note}**")
+        out.append(f"- Continuation instruction (from user): **{note}**")
     out.append("")
     if s["summary"]:
-        out += [f"## Skrót z ostatniego kompaktowania ({fmt_ts(s['summary_ts'])}; jeśli coś przeczy ostatnim wymianom niżej, wygrywają wymiany)",
+        out += [f"## Latest compaction summary ({fmt_ts(s['summary_ts'])}; later exchanges take precedence)",
                 pick_summary(s["summary"]), ""]
     earlier, skipped = earlier_summaries(s["summaries"])
     if earlier:
-        out.append("## Chronologia wcześniejszych kompaktowań (sekcja Current Work; od najstarszej)")
+        out.append("## Earlier compaction history (Current Work section; oldest first)")
         if skipped:
-            out.append(f"- … pominięto {skipped} starszych kompaktowań (limit skrótu)")
+            out.append(f"- … omitted {skipped} earlier compactions (snapshot limit)")
         for ts, body in earlier:
             out += [f"### {fmt_ts(ts)}", body]
         out.append("")
     docs = {fp: n for fp, n in s["files"].items() if fp.lower().endswith(DOC_EXTENSIONS)}
     code = {fp: n for fp, n in s["files"].items() if fp not in docs}
-    for title, group, limit in (("Dokumenty zapisane w sesji (raporty, noty; ostatnio zmieniane na końcu)", docs, DOCS_CAP),
-                                (f"Pliki zmieniane w sesji (Edit/Write; ostatnio zmieniane na końcu; Bash: {s['bash']} wywołań)", code, FILES_CAP)):
+    for title, group, limit in (("Documents saved in the session (reports, notes; most recently changed last)", docs, DOCS_CAP),
+                                (f"Files changed in the session (Edit/Write; most recently changed last; Bash: {s['bash']} calls)", code, FILES_CAP)):
         if not group:
             continue
         out.append(f"## {title}")
         out += [f"- {short_path(fp, s['cwd'])} ×{n}" for fp, n in list(group.items())[-limit:]]
         if len(group) > limit:
-            out.append(f"- … oraz {len(group) - limit} wcześniejszych")
+            out.append(f"- … and {len(group) - limit} earlier items")
         out.append("")
     related = related_sessions(sid, s, note)
     if related:
-        out.append("## Powiązane sesje (wspólne identyfikatory z tytułu i polecenia; transkrypty czytać w razie potrzeby)")
+        out.append("## Related sessions (shared identifiers from the title and instruction; read transcripts only when needed)")
         for r in related:
-            out.append(f"- **{r['title'] or 'bez tytułu'}** · `{r['sid'][:8]}` · {fmt_ts(r['ts'])} · {', '.join(r['terms'])} · `{r['path']}`")
+            out.append(f"- **{r['title'] or 'untitled'}** · `{r['sid'][:8]}` · {fmt_ts(r['ts'])} · {', '.join(r['terms'])} · `{r['path']}`")
         out.append("")
     exchanges = s["exchanges"][-EXCHANGES:]
     if exchanges:
-        out.append("## Ostatnie wymiany (od najstarszej)")
+        out.append("## Recent exchanges (oldest first)")
         for i, ex in enumerate(exchanges):
             last = i == len(exchanges) - 1
-            out.append(f"### Użytkownik ({fmt_ts(ex['ts'])})")
+            out.append(f"### User ({fmt_ts(ex['ts'])})")
             out.append(cap(shrink_code(ex["prompt"]), PROMPT_CAP))
             if ex["order"]:
                 reply = "\n\n".join(ex["texts"][ex["order"][-1]])
-                out.append("### Claude (ostatnia odpowiedź w tej turze)")
+                out.append("### Claude (last response in this turn)")
                 out.append(cap(shrink_code(reply), REPLY_CAP_LAST if last else REPLY_CAP_EARLIER))
             out.append("")
     return "\n".join(out).rstrip() + "\n", s
@@ -369,7 +369,7 @@ def candidates(self_sid):
 
 
 def size_text(text):
-    return f"{len(text.encode('utf-8')) / 1024:.1f} KB, ~{len(text) // CHARS_PER_TOKEN} tokenów"
+    return f"{len(text.encode('utf-8')) / 1024:.1f} KB, ~{len(text) // CHARS_PER_TOKEN} tokens"
 
 
 def snapshot_size(sid):
@@ -377,32 +377,31 @@ def snapshot_size(sid):
         with open(os.path.join(HANDOFF_DIR, f"{sid}.md"), encoding="utf-8") as f:
             return size_text(f.read())
     except OSError:
-        return "brak snapshotu"
+        return "snapshot missing"
 
 
 def age(mtime):
     minutes = int((time.time() - mtime) // 60)
     if minutes < 60:
-        return f"{minutes} min temu"
+        return f"{minutes} min ago"
     if minutes < 48 * 60:
-        return f"{minutes // 60} h temu"
-    return f"{minutes // 1440} dni temu"
+        return f"{minutes // 60} h ago"
+    return f"{minutes // 1440} days ago"
 
 
 def row_text(i, r, cwd):
-    status = f"● aktywna ({r['live']['name']})" if r["live"] else "zamknięta"
+    status = f"● active ({r['live']['name']})" if r["live"] else "closed"
     where = "" if r["cwd"] == cwd else f" · cwd {r['cwd']}"
-    return (f"{i}. **{r['title'] or 'bez tytułu'}** — zapisany {age(r['saved'])} · {r['size']} · `{r['sid'][:8]}` · {r['branch']}{where} · sesja {status}\n"
-            f"   polecenie na kontynuację: {r['note'] or '(brak — model streści sesję i poczeka)'}")
+    return (f"{i}. **{r['title'] or 'untitled'}** — saved {age(r['saved'])} · {r['size']} · `{r['sid'][:8]}` · {r['branch']}{where} · session {status}\n"
+            f"   continuation instruction: {r['note'] or '(none — the model summarizes the session and waits)'}")
 
 
 def list_text(rows, self_sid, header, cwd):
     rows = rows[:LIST_LIMIT]
     with_state(lambda st: st["lists"].__setitem__(self_sid, [r["sid"] for r in rows]))
-    first = rows[0]
-    return "\n".join(["LISTA ZAPISANYCH HANDOFFÓW", header, ""] +
+    return "\n".join(["SAVED HANDOFFS", header, ""] +
                      [row_text(i, r, cwd) for i, r in enumerate(rows, 1)] +
-                     ["", "Wczytanie pozycji wybiera się numerem z tej listy, np. `/handoff 1`."])
+                     ["", "Load an entry by its number from this list, for example `/handoff 1`."])
 
 
 def print_list(rows, self_sid, header):
@@ -410,9 +409,9 @@ def print_list(rows, self_sid, header):
 
 
 def no_handoffs_text():
-    return ("BRAK ZAPISANYCH HANDOFFÓW\n"
-            "Zapis: w sesji, którą chcesz potem kontynuować, wpisz `/handoff -save` albo "
-            "`/handoff -save polecenie na kontynuację`.")
+    return ("NO SAVED HANDOFFS\n"
+            "Save one in the session you want to continue with by typing `/handoff -save` or "
+            "`/handoff -save continuation instruction`.")
 
 
 def emit_handoff(row, self_sid):
@@ -421,7 +420,7 @@ def emit_handoff(row, self_sid):
         with open(snapshot, encoding="utf-8") as f:
             text = f.read()
     except OSError:
-        return print(f"BRAK ZAPISANEGO SNAPSHOTA — {snapshot}")
+        return print(f"SAVED SNAPSHOT NOT FOUND — {snapshot}")
 
     def mark(st):
         pin = st["pins"].get(row["sid"])
@@ -430,7 +429,7 @@ def emit_handoff(row, self_sid):
             pin["consumed_at"] = now_iso()
     with_state(mark)
     if row.get("live"):
-        print(f"UWAGA: sesja źródłowa nadal działa ({row['live']['name']}); snapshot pochodzi z chwili zapisu.\n")
+        print(f"WARNING: the source session is still active ({row['live']['name']}); the snapshot is from the time it was saved.\n")
     print(text)
     print(f"[handoff: {size_text(text)}]")
 
@@ -438,29 +437,29 @@ def emit_handoff(row, self_sid):
 def cmd_load(self_sid, args):
     if args and args[0].lower() == "-save":
         note = " ".join(args[1:]).strip(" :") or None
-        print("HANDOFF ZAPISANY PRZEZ SKILL — hook UserPromptSubmit nie przechwycił polecenia, więc ten zapis kosztował wywołanie modelu.")
+        print("HANDOFF SAVED BY SKILL — the UserPromptSubmit hook did not intercept the command, so saving this handoff required a model call.")
         return print(save(self_sid, all_transcripts()[self_sid], note))
     rows = candidates(self_sid)
     if not rows:
         return print(no_handoffs_text())
     query = " ".join(args).strip()
     if not query:
-        return print_list(rows, self_sid, "Zapisane handoffy — wybierz jeden.")
+        return print_list(rows, self_sid, "Saved handoffs — choose one.")
     if not query.isdigit():
-        return print_list(rows, self_sid, "Nieprawidłowy wybór — aktualne zapisane handoffy:")
+        return print_list(rows, self_sid, "Invalid selection — current saved handoffs:")
     shown = read_state()["lists"].get(self_sid) or [r["sid"] for r in rows[:LIST_LIMIT]]
     idx = int(query) - 1
     if 0 <= idx < len(shown):
         row = next((r for r in rows if r["sid"] == shown[idx]), None)
         if row:
             return emit_handoff(row, self_sid)
-    return print_list(rows, self_sid, f"Nie ma pozycji {query} — aktualne zapisane handoffy:")
+    return print_list(rows, self_sid, f"There is no entry {query} — current saved handoffs:")
 
 
 def save(sid, path, note):
     text, s = render(sid, path, note, None)
     if not s["exchanges"]:
-        return "Handoff: ta sesja nie ma jeszcze żadnej wymiany — nic do zapisania. W nowej sesji wczytujesz przez /handoff."
+        return "Handoff: this session has no exchanges yet, so there is nothing to save. Load it in a new session with /handoff."
     os.makedirs(HANDOFF_DIR, exist_ok=True)
     md = os.path.join(HANDOFF_DIR, f"{sid}.md")
     with open(md, "w", encoding="utf-8") as f:
@@ -469,9 +468,9 @@ def save(sid, path, note):
     def pin(st):
         st["pins"][sid] = {"note": note, "saved_at": now_iso(), "saved_epoch": time.time(), "consumed_by": None}
     with_state(pin)
-    return (f"Handoff zapisany ({size_text(text)}): {md}\n"
-            f"Tytuł: {s['title']}" + (f" · polecenie na kontynuację: {note}" if note else "") +
-            "\nW nowej sesji: /handoff")
+    return (f"Handoff saved ({size_text(text)}): {md}\n"
+            f"Title: {s['title']}" + (f" · continuation instruction: {note}" if note else "") +
+            "\nIn a new session: /handoff")
 
 
 def cmd_hook_prompt():
@@ -479,8 +478,8 @@ def cmd_hook_prompt():
     prompt = data.get("prompt") or ""
     if LIST_RE.match(prompt):
         rows = candidates(data["session_id"])
-        body = list_text(rows, data["session_id"], "Zapisane handoffy — wybierz jeden.", data["cwd"]) if rows else no_handoffs_text()
-        msg = "Bez wywołania modelu.\n\n" + body
+        body = list_text(rows, data["session_id"], "Saved handoffs — choose one.", data["cwd"]) if rows else no_handoffs_text()
+        msg = "No model call.\n\n" + body
     else:
         m = SAVE_RE.match(prompt)
         if not m:
@@ -493,23 +492,23 @@ def cmd_hook_prompt():
                 idx = int(args[0]) - 1
                 if 0 <= idx < len(shown) and any(r["sid"] == shown[idx] for r in rows):
                     return
-            body = list_text(rows, data["session_id"], "Nieprawidłowy wybór — aktualne zapisane handoffy:", data["cwd"]) if rows else no_handoffs_text()
-            return print(json.dumps({"decision": "block", "reason": "Bez wywołania modelu.\n\n" + body}, ensure_ascii=False))
+            body = list_text(rows, data["session_id"], "Invalid selection — current saved handoffs:", data["cwd"]) if rows else no_handoffs_text()
+            return print(json.dumps({"decision": "block", "reason": "No model call.\n\n" + body}, ensure_ascii=False))
         note = (m.group("note") or "").strip() or None
-        msg = "Bez wywołania modelu. " + save(data["session_id"], data["transcript_path"], note)
+        msg = "No model call. " + save(data["session_id"], data["transcript_path"], note)
     print(json.dumps({"decision": "block", "reason": msg}, ensure_ascii=False))
 
 
 def main():
     argv = sys.argv[1:]
     if not argv:
-        sys.exit("użycie: handoff.py load --self SID -- [-save polecenie | numer] | hook-prompt | save SID [polecenie] | show SID")
+        sys.exit("usage: handoff.py load --self SID -- [-save instruction | number] | hook-prompt | save SID [instruction] | show SID")
     cmd = argv[0]
     if cmd == "hook-prompt":
         return cmd_hook_prompt()
     if cmd == "load":
         if len(argv) < 3 or argv[1] != "--self":
-            sys.exit("load wymaga --self SID")
+            sys.exit("load requires --self SID")
         rest = argv[3:]
         if rest and rest[0] == "--":
             rest = rest[1:]
@@ -524,8 +523,8 @@ def main():
             with open(snapshot, encoding="utf-8") as f:
                 return print(f.read())
         except OSError:
-            sys.exit(f"nie znaleziono zapisanego snapshotu: {snapshot}")
-    sys.exit(f"nieznana komenda: {cmd}")
+            sys.exit(f"saved snapshot not found: {snapshot}")
+    sys.exit(f"unknown command: {cmd}")
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ SETTINGS="$CLAUDE_DIR/settings.json"
 HOOK_CMD="python3 $SKILL_DIR/handoff.py hook-prompt"
 
 usage() {
-  echo "użycie: $0 [--uninstall]"
+  echo "usage: $0 [--uninstall]"
   exit 1
 }
 
@@ -16,7 +16,7 @@ edit_settings() {
   local mode="$1"
   if [ -f "$SETTINGS" ]; then
     cp "$SETTINGS" "$SETTINGS.bak-handoff"
-    echo "kopia ustawień: $SETTINGS.bak-handoff"
+    echo "settings backup: $SETTINGS.bak-handoff"
   fi
   python3 - "$SETTINGS" "$HOOK_CMD" "$mode" <<'EOF'
 import json, os, sys
@@ -48,19 +48,19 @@ EOF
 
 case "${1:-}" in
   "")
-    command -v python3 >/dev/null || { echo "brak python3"; exit 1; }
+    command -v python3 >/dev/null || { echo "python3 is required"; exit 1; }
     mkdir -p "$SKILL_DIR"
     install -m 0755 "$SRC_DIR/handoff.py" "$SKILL_DIR/handoff.py"
     sed "s#__SKILL_DIR__#$SKILL_DIR#g" "$SRC_DIR/SKILL.md.template" > "$SKILL_DIR/SKILL.md"
     edit_settings install
-    echo "zainstalowano skill: $SKILL_DIR"
-    echo "hook UserPromptSubmit: $HOOK_CMD"
-    echo "działa w sesjach uruchomionych od teraz"
+    echo "installed skill: $SKILL_DIR"
+    echo "UserPromptSubmit hook: $HOOK_CMD"
+    echo "available in new sessions"
     ;;
   --uninstall)
     edit_settings uninstall
     rm -rf "$SKILL_DIR"
-    echo "usunięto skill i hook; zapisane handoffy zostają w $CLAUDE_DIR/handoffs"
+    echo "removed skill and hook; saved handoffs remain in $CLAUDE_DIR/handoffs"
     ;;
   *)
     usage

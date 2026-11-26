@@ -78,7 +78,6 @@ the selected snapshot as context to the current session.
 | --- | --- |
 | `handoff.py` | Parses transcripts and manages snapshots. |
 | `SKILL.md` | Codex skill definition. |
-| `SKILL.md.template` | Source copy of the skill definition. |
 | `install.sh` | Installs and removes the skill and hook. |
 
 The parser relies on Codex's local transcript format. Changes to that format

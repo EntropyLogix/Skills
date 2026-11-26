@@ -121,7 +121,7 @@ def cap(text, limit):
     if len(text) <= limit:
         return text
     head = int(limit * 0.7)
-    return text[:head].rstrip() + f"\n[… pominięto {len(text) - limit} znaków …]\n" + text[-(limit - head):].lstrip()
+    return text[:head].rstrip() + f"\n[… {len(text) - limit} characters omitted …]\n" + text[-(limit - head):].lstrip()
 
 
 def shrink_code(text):
@@ -130,7 +130,7 @@ def shrink_code(text):
         lines = body.count("\n")
         if lines <= CODE_KEEP_LINES:
             return match.group(0)
-        return f"[blok kodu, {lines} linii — pominięty]"
+        return f"[code block, {lines} lines omitted]"
 
     return FENCE_RE.sub(repl, text)
 
@@ -246,38 +246,38 @@ def related_sessions(sid, title, note):
 def render_snapshot(sid, path, note, title=None):
     data = parse_transcript(path)
     meta = data["meta"]
-    title = title or "sesja bez tytułu"
-    out = [f"# HANDOFF — {title}", "", f"- Sesja: `{sid}` · snapshot zapisany: {fmt_ts(now_iso())}"]
-    out.append(f"- cwd: `{meta['cwd']}` · gałąź: `{meta['branch']}` · aktywność: {fmt_ts(meta['ts'])}")
-    out.append(f"- Transkrypt źródłowy (pełne szczegóły, czytać tylko w razie potrzeby): `{path}`")
+    title = title or "untitled session"
+    out = [f"# HANDOFF — {title}", "", f"- Session: `{sid}` · snapshot saved: {fmt_ts(now_iso())}"]
+    out.append(f"- cwd: `{meta['cwd']}` · branch: `{meta['branch']}` · activity: {fmt_ts(meta['ts'])}")
+    out.append(f"- Source transcript (read for full details only when needed): `{path}`")
     if note:
-        out.append(f"- Polecenie na kontynuację (od użytkownika): **{note}**")
+        out.append(f"- Continuation instruction (from user): **{note}**")
     out.append("")
     if data["files"]:
-        out.append(f"## Pliki wskazane w patchach (wywołania narzędzi pominięte; exec: {data['commands']})")
+        out.append(f"## Files referenced by patches (tool calls omitted; exec: {data['commands']})")
         for file_path, count in list(data["files"].items())[-FILES_CAP:]:
             out.append(f"- {short_path(file_path, meta['cwd'])} ×{count}")
         if len(data["files"]) > FILES_CAP:
-            out.append(f"- … oraz {len(data['files']) - FILES_CAP} wcześniejszych")
+            out.append(f"- … and {len(data['files']) - FILES_CAP} earlier items")
         out.append("")
     elif data["commands"]:
-        out += ["## Aktywność narzędzi", f"- Wywołania exec: {data['commands']} — wyniki narzędzi pominięte", ""]
+        out += ["## Tool activity", f"- Exec calls: {data['commands']} — tool output omitted", ""]
     related = related_sessions(sid, title, note)
     if related:
-        out.append("## Powiązane zapisane handovery")
+        out.append("## Related saved handoffs")
         for row in related:
             pin = row["pin"]
-            out.append(f"- **{pin.get('title') or 'bez tytułu'}** · `{row['sid'][:8]}` · {', '.join(row['terms'])}")
+            out.append(f"- **{pin.get('title') or 'untitled'}** · `{row['sid'][:8]}` · {', '.join(row['terms'])}")
         out.append("")
     exchanges = data["exchanges"][-EXCHANGES:]
     if exchanges:
-        out.append("## Ostatnie wymiany (od najstarszej)")
+        out.append("## Recent exchanges (oldest first)")
         for index, exchange in enumerate(exchanges):
             last = index == len(exchanges) - 1
-            out.append(f"### Użytkownik ({fmt_ts(exchange['ts'])})")
+            out.append(f"### User ({fmt_ts(exchange['ts'])})")
             out.append(cap(shrink_code(exchange["prompt"]), PROMPT_CAP))
             if exchange["replies"]:
-                out.append("### Codex (ostatnia odpowiedź w tej turze)")
+                out.append("### Codex (last response in this turn)")
                 reply = exchange["replies"][-1]
                 out.append(cap(shrink_code(reply), REPLY_CAP_LAST if last else REPLY_CAP_EARLIER))
             out.append("")
@@ -291,7 +291,7 @@ def snapshot_path(sid):
 def save(sid, path, note, title=None):
     text, data = render_snapshot(sid, path, note, title)
     if not data["exchanges"]:
-        return "Handoff: ta sesja nie ma jeszcze żadnej wymiany — nic do zapisania."
+        return "Handoff: this session has no exchanges yet, so there is nothing to save."
     os.makedirs(HANDOFF_DIR, exist_ok=True)
     target = snapshot_path(sid)
     tmp = target + ".tmp"
@@ -313,7 +313,7 @@ def save(sid, path, note, title=None):
         }
 
     with_state(pin)
-    return f"Handoff zapisany jako zamrożony snapshot: {target}\nW nowej sesji: /handoff"
+    return f"Handoff saved as a frozen snapshot: {target}\nIn a new session: /handoff"
 
 
 def candidates(self_sid):
@@ -332,16 +332,16 @@ def candidates(self_sid):
 def age(epoch):
     minutes = int((time.time() - epoch) // 60)
     if minutes < 60:
-        return f"{minutes} min temu"
+        return f"{minutes} min ago"
     if minutes < 48 * 60:
-        return f"{minutes // 60} h temu"
-    return f"{minutes // 1440} dni temu"
+        return f"{minutes // 60} h ago"
+    return f"{minutes // 1440} days ago"
 
 
 def row_text(index, row, cwd):
     where = "" if row.get("cwd") == cwd else f" · cwd {row.get('cwd')}"
-    return (f"{index}. **{row.get('title') or 'bez tytułu'}** — zapisany {age(row['saved_epoch'])} · `{row['sid'][:8]}` · "
-            f"{row.get('branch')}{where}\n   polecenie na kontynuację: {row.get('note') or '(brak — model streści sesję i poczeka)'}")
+    return (f"{index}. **{row.get('title') or 'untitled'}** — saved {age(row['saved_epoch'])} · `{row['sid'][:8]}` · "
+            f"{row.get('branch')}{where}\n   continuation instruction: {row.get('note') or '(none — the model summarizes the session and waits)'}")
 
 
 def list_text(rows, self_sid, header, cwd):
@@ -349,15 +349,15 @@ def list_text(rows, self_sid, header, cwd):
     with_state(lambda state: state["lists"].__setitem__(self_sid, [row["sid"] for row in rows]))
     if not rows:
         return no_handoffs_text()
-    return "\n".join(["LISTA ZAMROŻONYCH HANDOFFÓW", header, ""] +
+    return "\n".join(["SAVED HANDOFFS", header, ""] +
                      [row_text(index, row, cwd) for index, row in enumerate(rows, 1)] +
-                     ["", "Wczytanie pozycji wybiera się numerem z tej listy, np. `/handoff 1`."])
+                     ["", "Load an entry by its number from this list, for example `/handoff 1`."])
 
 
 def no_handoffs_text():
-    return ("BRAK ZAPISANYCH HANDOFFÓW\n"
-            "Zapis: w sesji, którą chcesz potem kontynuować, wpisz `/handoff -save` albo "
-            "`/handoff -save polecenie na kontynuację`.")
+    return ("NO SAVED HANDOFFS\n"
+            "Save one in the session you want to continue with by typing `/handoff -save` or "
+            "`/handoff -save continuation instruction`.")
 
 
 def select_row(self_sid, args):
@@ -389,7 +389,7 @@ def load_snapshot(row, self_sid):
         with open(row["path"], encoding="utf-8") as f:
             text = f.read()
     except OSError:
-        return "BRAK SNAPSHOTU HANDOFFU — zapisany plik nie jest dostępny."
+        return "HANDOFF SNAPSHOT NOT FOUND — the saved file is unavailable."
     mark_consumed(row["sid"], self_sid)
     return text
 
@@ -399,20 +399,20 @@ def read_snapshot(row):
         with open(row["path"], encoding="utf-8") as f:
             return f.read()
     except OSError:
-        return "BRAK SNAPSHOTU HANDOFFU — zapisany plik nie jest dostępny."
+        return "HANDOFF SNAPSHOT NOT FOUND — the saved file is unavailable."
 
 
 def load_context(text):
-    return ("Wczytano zamrożony snapshot handoffu. Traktuj go jako kontekst poprzedniej sesji. "
-            "Jeśli zawiera polecenie na kontynuację, wykonaj je od razu. Jeśli go nie zawiera, "
-            "streść stan w 2–4 zdaniach po polsku i czekaj na dalsze polecenie.\n\n" + text)
+    return ("A frozen handoff snapshot was loaded. Treat it as context from the previous session. "
+            "If it contains a continuation instruction, execute it immediately. Otherwise, "
+            "summarize the state in 2–4 sentences in English and wait for the next instruction.\n\n" + text)
 
 
 def cmd_load(self_sid, args):
     if args and args[0].lower() == "-save":
         path = all_transcripts().get(self_sid)
         if not path:
-            return print("Nie znaleziono transcriptu bieżącej sesji.")
+            return print("The current session transcript was not found.")
         note = " ".join(args[1:]).strip(" :") or None
         title = index_meta().get(self_sid, {}).get("thread_name")
         return print(save(self_sid, path, note, title))
@@ -422,7 +422,7 @@ def cmd_load(self_sid, args):
     if row:
         return print(load_snapshot(row, self_sid))
     query = " ".join(args).strip()
-    header = "Nieprawidłowy wybór — aktualne zamrożone handoffy:" if query else "Zamrożone handoffy — wybierz jeden."
+    header = "Invalid selection — current saved handoffs:" if query else "Saved handoffs — choose one."
     return print(list_text(rows, self_sid, header, os.getcwd()))
 
 
@@ -432,16 +432,16 @@ def cmd_hook_prompt():
     sid = data.get("session_id")
     if LIST_RE.match(prompt):
         rows = candidates(sid)
-        body = list_text(rows, sid, "Zamrożone handoffy — wybierz jeden.", data.get("cwd")) if rows else no_handoffs_text()
-        print(json.dumps({"decision": "block", "reason": "Bez wywołania modelu.\n\n" + body}, ensure_ascii=False))
+        body = list_text(rows, sid, "Saved handoffs — choose one.", data.get("cwd")) if rows else no_handoffs_text()
+        print(json.dumps({"decision": "block", "reason": "No model call.\n\n" + body}, ensure_ascii=False))
         return
     match = SAVE_RE.match(prompt)
     if match:
         path = data.get("transcript_path")
         note = (match.group("note") or "").strip() or None
         title = index_meta().get(sid, {}).get("thread_name")
-        message = save(sid, path, note, title) if path else "Nie znaleziono transcriptu bieżącej sesji."
-        print(json.dumps({"decision": "block", "reason": "Bez wywołania modelu. " + message}, ensure_ascii=False))
+        message = save(sid, path, note, title) if path else "The current session transcript was not found."
+        print(json.dumps({"decision": "block", "reason": "No model call. " + message}, ensure_ascii=False))
         return
     if not HANDOFF_RE.match(prompt):
         return
@@ -452,7 +452,7 @@ def cmd_hook_prompt():
         return
     if not row:
         query = " ".join(args).strip()
-        header = "Nieprawidłowy wybór — aktualne zamrożone handoffy:" if query else "Zamrożone handoffy — wybierz jeden."
+        header = "Invalid selection — current saved handoffs:" if query else "Saved handoffs — choose one."
         print(json.dumps({"decision": "block", "reason": list_text(rows, sid, header, data.get("cwd"))}, ensure_ascii=False))
         return
     text = load_snapshot(row, sid)
@@ -462,13 +462,13 @@ def cmd_hook_prompt():
 def main():
     argv = sys.argv[1:]
     if not argv:
-        sys.exit("użycie: handoff.py load --self SID -- [-save polecenie | numer] | hook-prompt")
+        sys.exit("usage: handoff.py load --self SID -- [-save instruction | number] | hook-prompt")
     command = argv[0]
     if command == "hook-prompt":
         return cmd_hook_prompt()
     if command == "load":
         if len(argv) < 3 or argv[1] != "--self":
-            sys.exit("load wymaga --self SID")
+            sys.exit("load requires --self SID")
         rest = argv[3:]
         if rest and rest[0] == "--":
             rest = rest[1:]
@@ -477,16 +477,16 @@ def main():
         sid = argv[1]
         path = all_transcripts().get(sid)
         if not path:
-            sys.exit("nie znaleziono transcriptu sesji")
+            sys.exit("session transcript not found")
         title = index_meta().get(sid, {}).get("thread_name")
         return print(save(sid, path, " ".join(argv[2:]) or None, title))
     if command == "show":
         sid = argv[1]
         row = read_state()["pins"].get(sid)
         if not row:
-            sys.exit("nie znaleziono handoffu")
+            sys.exit("handoff not found")
         return print(read_snapshot({"sid": sid, "path": row.get("snapshot") or snapshot_path(sid)}))
-    sys.exit(f"nieznana komenda: {command}")
+    sys.exit(f"unknown command: {command}")
 
 
 if __name__ == "__main__":
