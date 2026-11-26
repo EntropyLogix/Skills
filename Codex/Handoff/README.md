@@ -1,34 +1,85 @@
-# Handoff — Codex
+# Handoff for Codex
 
-Globalny skill `handoff` przenosi odchudzony snapshot między lokalnymi sesjami Codex. Snapshot jest budowany w chwili `/handoff -save` i pozostaje niezmienny. Przy wczytaniu do nowej sesji trafiają tylko wybrane wiadomości i metadane; wyniki narzędzi nie są kopiowane.
+This skill saves a compact, frozen snapshot of a Codex session and loads it
+into a new session. It is intended for passing focused context between local
+sessions while keeping the full transcript available through Codex's native
+resume flow.
 
-## Polecenia
+Its main purpose is to reduce the context size and token usage needed to
+continue a task. The snapshot preserves recent work and selected metadata,
+while a new session starts from a clear checkpoint instead of the full
+transcript.
 
-| Polecenie | Efekt | Model |
-|---|---|---|
-| `/handoff -save` | zapisuje snapshot bieżącej sesji | nie jest wywoływany |
-| `/handoff -save polecenie` | zapisuje snapshot i notę na kontynuację | nie jest wywoływany |
-| `/handoff` | pokazuje listę zamrożonych snapshotów | nie jest wywoływany |
-| `/handoff N` | wczytuje snapshot wybrany numerem z listy do bieżącej sesji | wywoływany z odchudzonym kontekstem |
+## Commands
 
-Snapshot zachowuje ostatnie wymiany użytkownika i Codex, ścieżkę sesji, katalog, gałąź, ścieżki wskazane w patchach oraz liczbę wywołań `exec`. Wyniki narzędzi i długie bloki kodu są pomijane albo skracane.
+| Command | Result |
+| --- | --- |
+| `/handoff -save` | Save the current session. |
+| `/handoff -save <instruction>` | Save the session with a continuation instruction. |
+| `/handoff` | List available snapshots. |
+| `/handoff N` | Load snapshot `N` from the last list. |
 
-Każda sesja ma jeden snapshot. Kolejny zapis go zastępuje. Snapshot jest widoczny przez 14 dni i po wczytaniu zostaje oznaczony jako zużyty. Pliki robocze są przechowywane w `$CODEX_HOME/handoffs/`.
+Each session has one snapshot. Saving again replaces the previous one. A
+snapshot is available for 14 days and is marked as consumed after it is loaded.
 
-## Instalacja
+## Installation
+
+From the repository root, run:
 
 ```bash
-/config/workspace/Skills/Codex/Handoff/install.sh
+./Codex/Handoff/install.sh
 ```
 
-Instalator kopiuje skill do `$HOME/.agents/skills/handoff/` i dopisuje hook `UserPromptSubmit` do `$CODEX_HOME/hooks.json`. Po instalacji otwórz `/hooks` w Codex i zaufaj hookowi. Nowe sesje zobaczą konfigurację po ponownym uruchomieniu.
+The installer copies the skill to `~/.agents/skills/handoff/` and adds the
+`UserPromptSubmit` hook to `$CODEX_HOME/hooks.json`. When `CODEX_HOME` is not
+set, the hook state is stored under `~/.codex/`.
 
-Odinstalowanie:
+Open `/hooks` in Codex and trust the new hook. Start a new session after
+installing.
+
+Set `CODEX_HOME` to use another Codex configuration directory. Set
+`CODEX_HANDOFF_SKILL_DIR` to use another skill installation directory.
+
+Remove the integration with:
 
 ```bash
-/config/workspace/Skills/Codex/Handoff/install.sh --uninstall
+./Codex/Handoff/install.sh --uninstall
 ```
 
-## Zakres
+## Requirements
 
-Skill działa w lokalnym Codex CLI, IDE i desktopie, gdy lokalne hooki są włączone. `/resume` nadal służy do wznowienia pełnej sesji; handoff przekazuje kontrolowany wyciąg. Nieprawidłowy numer handoffu pokazuje listę ponownie.
+- Codex with local hooks enabled
+- Python 3.8 or newer
+- Linux or macOS
+- No third-party Python packages
+
+## Storage and snapshot contents
+
+Snapshots and state are stored in `$CODEX_HOME/handoffs/`, or in
+`~/.codex/handoffs/` when `CODEX_HOME` is not set. The script keeps the
+snapshot local.
+
+A snapshot includes recent user and Codex messages, session metadata, paths
+from applied patches, and the number of `exec` calls. Tool output and long
+code blocks are reduced or omitted.
+
+## Verification
+
+1. In a session with some conversation, run `/handoff -save`.
+2. Start a new session and run `/handoff`.
+3. Load the listed snapshot with `/handoff 1`.
+
+The hook should handle saving and listing before model invocation. Loading adds
+the selected snapshot as context to the current session.
+
+## Files
+
+| File | Purpose |
+| --- | --- |
+| `handoff.py` | Parses transcripts and manages snapshots. |
+| `SKILL.md` | Codex skill definition. |
+| `SKILL.md.template` | Source copy of the skill definition. |
+| `install.sh` | Installs and removes the skill and hook. |
+
+The parser relies on Codex's local transcript format. Changes to that format
+may require parser updates.
