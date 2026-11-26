@@ -80,7 +80,12 @@ own.
 The standard implementation only handles a usage-limit reset. It does not
 retry unknown failures, permissions, approvals, cancelled turns, or invalid
 requests. If `codex queue` fails, the entry becomes `error` and no duplicate
-retry is attempted.
+retry is attempted for an unknown or permanent error.
+
+Known transient errors such as `capacity`, overload, rate limits, 429, and
+temporary 5xx responses are retried up to four total attempts with delays of
+1, 5, and 15 minutes. A timeout with no clear rejection is treated as
+`unknown`, because the original message may already have been delivered.
 
 The target session should remain loaded in Codex while it waits. If Codex is
 restarted, open the target conversation before relying on the queued message.

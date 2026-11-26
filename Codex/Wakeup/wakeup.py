@@ -19,6 +19,8 @@ LOG_PATH = os.path.join(WAKEUP_DIR, "watcher.log")
 TAIL_BYTES = 2 * 1024 * 1024
 POLL_SECONDS = 30
 MESSAGE_LIMIT = 8000
+RETRY_DELAYS = (60, 300, 900)
+MAX_ATTEMPTS = len(RETRY_DELAYS) + 1
 WAKEUP_RE = re.compile(r"^\s*/wakeup(?:\s+(?P<argument>[\s\S]*?))?\s*$", re.IGNORECASE)
 
 
@@ -89,6 +91,8 @@ def entry_text(entry):
         lines.append(f"Sent: {entry['sent_at']}")
     if entry.get("last_error"):
         lines.append(f"Last error: {entry['last_error']}")
+    if entry.get("next_attempt_at"):
+        lines.append(f"Next attempt: {format_time(entry['next_attempt_at'])}")
     return "\n".join(lines)
 
 
@@ -111,6 +115,7 @@ def arm(session_id, transcript_path, cwd, message):
             "sent_at": None,
             "attempts": 0,
             "last_error": None,
+            "next_attempt_at": None,
         }
 
     with_state(mutate)
@@ -196,7 +201,7 @@ def mark_waiting(session_id, reset_at):
 def claim_for_send(session_id):
     def mutate(state):
         entry = state["entries"].get(session_id)
-        if not entry or entry.get("status") not in ("armed", "waiting"):
+        if not entry or entry.get("status") not in ("armed", "waiting", "retry_wait"):
             return None
         entry["status"] = "sending"
         entry["attempts"] = int(entry.get("attempts", 0)) + 1
@@ -217,6 +222,26 @@ def finish_send(session_id, success, error=None):
         else:
             entry["status"] = "error"
             entry["last_error"] = error or "codex queue failed"
+            entry["next_attempt_at"] = None
+
+    with_state(mutate)
+
+
+def schedule_retry(session_id, error):
+    def mutate(state):
+        entry = state["entries"].get(session_id)
+        if not entry:
+            return
+        attempts = int(entry.get("attempts", 0))
+        if attempts >= MAX_ATTEMPTS:
+            entry["status"] = "error"
+            entry["next_attempt_at"] = None
+            entry["last_error"] = f"retry limit reached: {error}"
+            return
+        delay = RETRY_DELAYS[attempts - 1]
+        entry["status"] = "retry_wait"
+        entry["next_attempt_at"] = time.time() + delay
+        entry["last_error"] = f"transient error, retry {attempts}/{MAX_ATTEMPTS} in {delay}s: {error}"
 
     with_state(mutate)
 
@@ -241,31 +266,80 @@ def send_message(entry):
             timeout=60,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return False, str(error)
+    except subprocess.TimeoutExpired as error:
+        return False, str(error), "unknown"
+    except OSError as error:
+        return False, str(error), "unknown"
     if result.returncode == 0:
-        return True, ""
+        return True, "", "sent"
     detail = (result.stderr or result.stdout).strip()
-    return False, detail or f"codex queue exited with status {result.returncode}"
+    detail = detail or f"codex queue exited with status {result.returncode}"
+    lowered = detail.lower()
+    permanent_terms = (
+        "invalid thread",
+        "no rollout found",
+        "permission",
+        "approval",
+        "authentication",
+        "unauthorized",
+        "forbidden",
+        "context length",
+        "invalid request",
+        "cancelled",
+        "canceled",
+    )
+    transient_terms = (
+        "capacity",
+        "overloaded",
+        "too many requests",
+        "rate limit",
+        "rate_limit",
+        "http 429",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+        "server error",
+        "temporarily unavailable",
+        "connection refused",
+        "connection reset",
+        "network error",
+    )
+    if any(term in lowered for term in permanent_terms):
+        return False, detail, "permanent"
+    has_transient_status = re.search(r"(?<!\d)(429|500|502|503|504)(?!\d)", lowered)
+    if has_transient_status or any(term in lowered for term in transient_terms):
+        return False, detail, "transient"
+    return False, detail, "unknown"
 
 
 def process_entry(entry, dry_run=False):
-    if entry.get("status") not in ("armed", "waiting"):
+    status = entry.get("status")
+    if status not in ("armed", "waiting", "retry_wait"):
         return
-    limits = latest_rate_limits(entry.get("transcript_path", ""))
-    reset_at = reset_for_limits(limits)
-    if reset_at is None:
-        return
-    if time.time() < reset_at:
-        mark_waiting(entry["session_id"], reset_at)
-        return
+    if status == "retry_wait":
+        if time.time() < float(entry.get("next_attempt_at") or 0):
+            return
+    else:
+        limits = latest_rate_limits(entry.get("transcript_path", ""))
+        reset_at = reset_for_limits(limits)
+        if reset_at is None:
+            return
+        if time.time() < reset_at:
+            mark_waiting(entry["session_id"], reset_at)
+            return
     if dry_run:
         return
     claimed = claim_for_send(entry["session_id"])
     if not claimed:
         return
-    success, error = send_message(claimed)
-    finish_send(claimed["session_id"], success, error)
+    success, error, category = send_message(claimed)
+    if success:
+        finish_send(claimed["session_id"], True)
+    elif category == "transient":
+        schedule_retry(claimed["session_id"], error)
+    else:
+        finish_send(claimed["session_id"], False, error)
 
 
 def process_once(dry_run=False):
