@@ -89,3 +89,7 @@ temporary 5xx responses are retried up to four total attempts with delays of
 
 The target session should remain loaded in Codex while it waits. If Codex is
 restarted, open the target conversation before relying on the queued message.
+
+If `$wakeup` produces no command result, restart or resume the target session
+after installation and trust the hook from `/hooks`. The skill must not cause
+the model to infer or begin another task when the command hook is unavailable.
