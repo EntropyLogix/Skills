@@ -14,13 +14,14 @@ transcript.
 
 | Command | Result |
 | --- | --- |
-| `/handoff -save` | Save the current session. |
-| `/handoff -save <instruction>` | Save the session with a continuation instruction. |
+| `/handoff --save` | Save the current session. |
+| `/handoff --save <instruction>` | Save the session with a continuation instruction. |
 | `/handoff` | List available snapshots. |
 | `/handoff N` | Load snapshot `N` from the last list. |
 
-Each session has one snapshot. Saving again replaces the previous one. A
-snapshot is available for 14 days and is marked as consumed after it is loaded.
+Each session has one snapshot. Saving again replaces the previous one. The list
+shows every unloaded snapshot with its save date; a snapshot disappears from the
+list after it is loaded.
 
 ## Installation
 
@@ -65,7 +66,7 @@ code blocks are reduced or omitted.
 
 ## Verification
 
-1. In a session with some conversation, run `/handoff -save`.
+1. In a session with some conversation, run `/handoff --save`.
 2. Start a new session and run `/handoff`.
 3. Load the listed snapshot with `/handoff 1`.
 

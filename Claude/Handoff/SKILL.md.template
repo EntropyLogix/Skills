@@ -1,7 +1,7 @@
 ---
 name: handoff
-description: Saves or loads a Claude Code session handoff. Use `/handoff -save [instruction]` to save the current session and `/handoff` to list saved handoffs. Load a saved handoff by its list number.
-argument-hint: "[-save instruction | N]"
+description: Saves or loads a Claude Code session handoff. Use `/handoff --save [instruction]` to save the current session and `/handoff` to list saved handoffs. Load a saved handoff by its list number.
+argument-hint: "[--save instruction | N]"
 disable-model-invocation: true
 allowed-tools: Bash(python3 __SKILL_DIR__/handoff.py:*)
 ---
@@ -12,6 +12,6 @@ The block above contains the local handoff script output.
 
 - If it starts with `HANDOFF SAVED BY SKILL`, relay the message in one or two sentences and mention that the hook did not intercept the command. Do nothing else.
 - If it starts with `NO SAVED HANDOFFS` or `SAVED HANDOFFS`, relay it without changes or commentary. Do not run tools.
-- If it starts with `HANDOFF` or `WARNING`, it is context from the session being continued. Read the transcript or files only when the current task needs them.
+- If it starts with `HANDOFF` or `WARNING`, it is context from the session being continued. Read the transcript or files only when the current task needs them. Always reply in the language the user used in that session.
   - If it contains `Continuation instruction`, execute that instruction immediately as if the user had just sent it.
-  - Otherwise, summarize the previous session in 2–4 sentences in English and wait for the next instruction.
+  - Otherwise, summarize the previous session in 2–4 sentences and wait for the next instruction.

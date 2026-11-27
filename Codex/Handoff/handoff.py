@@ -14,15 +14,13 @@ HANDOFF_DIR = os.path.join(CODEX_DIR, "handoffs")
 STATE_PATH = os.path.join(HANDOFF_DIR, "state.json")
 LOCK_PATH = os.path.join(HANDOFF_DIR, "state.lock")
 
-SAVE_RE = re.compile(r"^\s*/handoff\s+-save\b:?\s*(?P<note>.*?)\s*$", re.IGNORECASE | re.DOTALL)
+SAVE_RE = re.compile(r"^\s*/handoff\s+--save\b:?\s*(?P<note>.*?)\s*$", re.IGNORECASE | re.DOTALL)
 LIST_RE = re.compile(r"^\s*/handoff\s*$", re.IGNORECASE)
 HANDOFF_RE = re.compile(r"^\s*/handoff(?:\s|$)", re.IGNORECASE)
 SESSION_RE = re.compile(r"-([0-9a-f]{8}-[0-9a-f-]{27,})\.jsonl$", re.IGNORECASE)
 FENCE_RE = re.compile(r"```[^\n]*\n([\s\S]*?)```")
 TERM_RE = re.compile(r"\b[A-Za-z]{1,8}-?\d{2,}\b")
 
-LIST_LIMIT = 8
-PIN_DAYS = 14
 EXCHANGES = 4
 PROMPT_CAP = 1500
 REPLY_CAP_LAST = 6000
@@ -318,46 +316,50 @@ def save(sid, path, note, title=None):
 
 def candidates(self_sid):
     state = read_state()
-    horizon = time.time() - PIN_DAYS * 86400
     rows = []
     for sid, pin in state["pins"].items():
         target = pin.get("snapshot") or snapshot_path(sid)
-        if sid == self_sid or pin.get("consumed_by") or pin.get("saved_epoch", 0) < horizon or not os.path.exists(target):
+        if sid == self_sid or pin.get("consumed_by") or not os.path.exists(target):
             continue
         rows.append({"sid": sid, "path": target, **pin})
     rows.sort(key=lambda row: -row.get("saved_epoch", 0))
     return rows
 
 
-def age(epoch):
+def saved_when(epoch):
     minutes = int((time.time() - epoch) // 60)
+    date = datetime.fromtimestamp(epoch).strftime("%Y-%m-%d %H:%M")
     if minutes < 60:
-        return f"{minutes} min ago"
+        return f"{date} ({minutes} min ago)"
     if minutes < 48 * 60:
-        return f"{minutes // 60} h ago"
-    return f"{minutes // 1440} days ago"
+        return f"{date} ({minutes // 60} h ago)"
+    return f"{date} ({minutes // 1440} days ago)"
 
 
 def row_text(index, row, cwd):
     where = "" if row.get("cwd") == cwd else f" · cwd {row.get('cwd')}"
-    return (f"{index}. **{row.get('title') or 'untitled'}** — saved {age(row['saved_epoch'])} · `{row['sid'][:8]}` · "
+    return (f"{index}. **{row.get('title') or 'untitled'}** — saved {saved_when(row['saved_epoch'])} · `{row['sid'][:8]}` · "
             f"{row.get('branch')}{where}\n   continuation instruction: {row.get('note') or '(none — the model summarizes the session and waits)'}")
 
 
 def list_text(rows, self_sid, header, cwd):
-    rows = rows[:LIST_LIMIT]
     with_state(lambda state: state["lists"].__setitem__(self_sid, [row["sid"] for row in rows]))
     if not rows:
         return no_handoffs_text()
     return "\n".join(["SAVED HANDOFFS", header, ""] +
                      [row_text(index, row, cwd) for index, row in enumerate(rows, 1)] +
-                     ["", "Load an entry by its number from this list, for example `/handoff 1`."])
+                     ["", "Load an entry by its number from this list, for example `/handoff 1`.",
+                      "Save the current session with `/handoff --save [instruction]`."])
 
 
 def no_handoffs_text():
     return ("NO SAVED HANDOFFS\n"
-            "Save one in the session you want to continue with by typing `/handoff -save` or "
-            "`/handoff -save continuation instruction`.")
+            "Save one in the session you want to continue with by typing `/handoff --save` or "
+            "`/handoff --save continuation instruction`.")
+
+
+def invalid_header(query):
+    return f"Invalid argument `{query}` — current saved handoffs:"
 
 
 def select_row(self_sid, args):
@@ -366,7 +368,7 @@ def select_row(self_sid, args):
         return rows, None
     query = " ".join(args).strip()
     if query.isdigit():
-        shown = read_state()["lists"].get(self_sid) or [row["sid"] for row in rows[:LIST_LIMIT]]
+        shown = read_state()["lists"].get(self_sid) or [row["sid"] for row in rows]
         index = int(query) - 1
         if 0 <= index < len(shown):
             return rows, next((row for row in rows if row["sid"] == shown[index]), None)
@@ -405,11 +407,12 @@ def read_snapshot(row):
 def load_context(text):
     return ("A frozen handoff snapshot was loaded. Treat it as context from the previous session. "
             "If it contains a continuation instruction, execute it immediately. Otherwise, "
-            "summarize the state in 2–4 sentences in English and wait for the next instruction.\n\n" + text)
+            "summarize the state in 2–4 sentences and wait for the next instruction. Always reply in the language "
+            "the user used in the previous session.\n\n" + text)
 
 
 def cmd_load(self_sid, args):
-    if args and args[0].lower() == "-save":
+    if args and args[0].lower() == "--save":
         path = all_transcripts().get(self_sid)
         if not path:
             return print("The current session transcript was not found.")
@@ -422,7 +425,7 @@ def cmd_load(self_sid, args):
     if row:
         return print(load_snapshot(row, self_sid))
     query = " ".join(args).strip()
-    header = "Invalid selection — current saved handoffs:" if query else "Saved handoffs — choose one."
+    header = invalid_header(query) if query else "Saved handoffs — choose one."
     return print(list_text(rows, self_sid, header, os.getcwd()))
 
 
@@ -452,7 +455,7 @@ def cmd_hook_prompt():
         return
     if not row:
         query = " ".join(args).strip()
-        header = "Invalid selection — current saved handoffs:" if query else "Saved handoffs — choose one."
+        header = invalid_header(query) if query else "Saved handoffs — choose one."
         print(json.dumps({"decision": "block", "reason": list_text(rows, sid, header, data.get("cwd"))}, ensure_ascii=False))
         return
     text = load_snapshot(row, sid)
@@ -462,7 +465,7 @@ def cmd_hook_prompt():
 def main():
     argv = sys.argv[1:]
     if not argv:
-        sys.exit("usage: handoff.py load --self SID -- [-save instruction | number] | hook-prompt")
+        sys.exit("usage: handoff.py load --self SID -- [--save instruction | number] | hook-prompt")
     command = argv[0]
     if command == "hook-prompt":
         return cmd_hook_prompt()

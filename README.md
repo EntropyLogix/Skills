@@ -26,14 +26,14 @@ does not help with the next step.
 
 Both implementations provide the same user-facing workflow:
 
-1. Save the current session with `/handoff -save`.
-2. Optionally attach a continuation instruction with `/handoff -save <instruction>`.
+1. Save the current session with `/handoff --save`.
+2. Optionally attach a continuation instruction with `/handoff --save <instruction>`.
 3. List available snapshots with `/handoff`.
 4. Load a snapshot by selecting its list number with `/handoff N`.
 
 Each session has one snapshot. Saving again replaces the previous snapshot for
-that session. Snapshots are retained for 14 days and are marked as consumed
-after they are loaded.
+that session. The list shows every unloaded snapshot with its save date;
+a snapshot disappears from the list after it is loaded.
 
 The snapshot contains selected conversation context and session metadata. Tool
 outputs and long code blocks are reduced or omitted so that the next session

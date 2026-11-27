@@ -14,15 +14,13 @@ HANDOFF_DIR = os.path.join(CLAUDE_DIR, "handoffs")
 STATE_PATH = os.path.join(HANDOFF_DIR, "state.json")
 LOCK_PATH = os.path.join(HANDOFF_DIR, "state.lock")
 
-SAVE_RE = re.compile(r"^\s*/handoff\s+-save\b:?\s*(?P<note>.*?)\s*$", re.IGNORECASE | re.DOTALL)
+SAVE_RE = re.compile(r"^\s*/handoff\s+--save\b:?\s*(?P<note>.*?)\s*$", re.IGNORECASE | re.DOTALL)
 LIST_RE = re.compile(r"^\s*/handoff\s*$", re.IGNORECASE)
 HANDOFF_RE = re.compile(r"^\s*/handoff(?:\s|$)", re.IGNORECASE)
 TAG_RE = re.compile(r"^\s*<([a-zA-Z_-]+)")
 SECTION_RE = re.compile(r"(?m)^\s*(\d+)\.\s+\*\*(.+?)\*\*")
 FENCE_RE = re.compile(r"```[^\n]*\n([\s\S]*?)```")
 
-LIST_LIMIT = 8
-PIN_DAYS = 14
 EXCHANGES = 4
 PROMPT_CAP = 1500
 REPLY_CAP_LAST = 6000
@@ -356,10 +354,9 @@ def candidates(self_sid):
     state = read_state()
     transcripts = all_transcripts()
     live = live_sessions()
-    horizon = time.time() - PIN_DAYS * 86400
     rows = []
     for sid, pin in state["pins"].items():
-        if sid == self_sid or pin.get("consumed_by") or pin["saved_epoch"] < horizon or sid not in transcripts:
+        if sid == self_sid or pin.get("consumed_by") or sid not in transcripts:
             continue
         path = transcripts[sid]
         rows.append({"sid": sid, "path": path, "saved": pin["saved_epoch"], "note": pin.get("note"),
@@ -380,28 +377,29 @@ def snapshot_size(sid):
         return "snapshot missing"
 
 
-def age(mtime):
-    minutes = int((time.time() - mtime) // 60)
+def saved_when(epoch):
+    minutes = int((time.time() - epoch) // 60)
+    date = datetime.fromtimestamp(epoch).strftime("%Y-%m-%d %H:%M")
     if minutes < 60:
-        return f"{minutes} min ago"
+        return f"{date} ({minutes} min ago)"
     if minutes < 48 * 60:
-        return f"{minutes // 60} h ago"
-    return f"{minutes // 1440} days ago"
+        return f"{date} ({minutes // 60} h ago)"
+    return f"{date} ({minutes // 1440} days ago)"
 
 
 def row_text(i, r, cwd):
     status = f"● active ({r['live']['name']})" if r["live"] else "closed"
     where = "" if r["cwd"] == cwd else f" · cwd {r['cwd']}"
-    return (f"{i}. **{r['title'] or 'untitled'}** — saved {age(r['saved'])} · {r['size']} · `{r['sid'][:8]}` · {r['branch']}{where} · session {status}\n"
+    return (f"{i}. **{r['title'] or 'untitled'}** — saved {saved_when(r['saved'])} · {r['size']} · `{r['sid'][:8]}` · {r['branch']}{where} · session {status}\n"
             f"   continuation instruction: {r['note'] or '(none — the model summarizes the session and waits)'}")
 
 
 def list_text(rows, self_sid, header, cwd):
-    rows = rows[:LIST_LIMIT]
     with_state(lambda st: st["lists"].__setitem__(self_sid, [r["sid"] for r in rows]))
     return "\n".join(["SAVED HANDOFFS", header, ""] +
                      [row_text(i, r, cwd) for i, r in enumerate(rows, 1)] +
-                     ["", "Load an entry by its number from this list, for example `/handoff 1`."])
+                     ["", "Load an entry by its number from this list, for example `/handoff 1`.",
+                      "Save the current session with `/handoff --save [instruction]`."])
 
 
 def print_list(rows, self_sid, header):
@@ -410,8 +408,12 @@ def print_list(rows, self_sid, header):
 
 def no_handoffs_text():
     return ("NO SAVED HANDOFFS\n"
-            "Save one in the session you want to continue with by typing `/handoff -save` or "
-            "`/handoff -save continuation instruction`.")
+            "Save one in the session you want to continue with by typing `/handoff --save` or "
+            "`/handoff --save continuation instruction`.")
+
+
+def invalid_header(query):
+    return f"Invalid argument `{query}` — current saved handoffs:"
 
 
 def emit_handoff(row, self_sid):
@@ -435,7 +437,7 @@ def emit_handoff(row, self_sid):
 
 
 def cmd_load(self_sid, args):
-    if args and args[0].lower() == "-save":
+    if args and args[0].lower() == "--save":
         note = " ".join(args[1:]).strip(" :") or None
         print("HANDOFF SAVED BY SKILL — the UserPromptSubmit hook did not intercept the command, so saving this handoff required a model call.")
         return print(save(self_sid, all_transcripts()[self_sid], note))
@@ -446,14 +448,14 @@ def cmd_load(self_sid, args):
     if not query:
         return print_list(rows, self_sid, "Saved handoffs — choose one.")
     if not query.isdigit():
-        return print_list(rows, self_sid, "Invalid selection — current saved handoffs:")
-    shown = read_state()["lists"].get(self_sid) or [r["sid"] for r in rows[:LIST_LIMIT]]
+        return print_list(rows, self_sid, invalid_header(query))
+    shown = read_state()["lists"].get(self_sid) or [r["sid"] for r in rows]
     idx = int(query) - 1
     if 0 <= idx < len(shown):
         row = next((r for r in rows if r["sid"] == shown[idx]), None)
         if row:
             return emit_handoff(row, self_sid)
-    return print_list(rows, self_sid, f"There is no entry {query} — current saved handoffs:")
+    return print_list(rows, self_sid, invalid_header(query))
 
 
 def save(sid, path, note):
@@ -488,11 +490,11 @@ def cmd_hook_prompt():
             args = prompt.strip().split()[1:]
             rows = candidates(data["session_id"])
             if args and args[0].isdigit():
-                shown = read_state()["lists"].get(data["session_id"]) or [r["sid"] for r in rows[:LIST_LIMIT]]
+                shown = read_state()["lists"].get(data["session_id"]) or [r["sid"] for r in rows]
                 idx = int(args[0]) - 1
                 if 0 <= idx < len(shown) and any(r["sid"] == shown[idx] for r in rows):
                     return
-            body = list_text(rows, data["session_id"], "Invalid selection — current saved handoffs:", data["cwd"]) if rows else no_handoffs_text()
+            body = list_text(rows, data["session_id"], invalid_header(" ".join(args)), data["cwd"]) if rows else no_handoffs_text()
             return print(json.dumps({"decision": "block", "reason": "No model call.\n\n" + body}, ensure_ascii=False))
         note = (m.group("note") or "").strip() or None
         msg = "No model call. " + save(data["session_id"], data["transcript_path"], note)
@@ -502,7 +504,7 @@ def cmd_hook_prompt():
 def main():
     argv = sys.argv[1:]
     if not argv:
-        sys.exit("usage: handoff.py load --self SID -- [-save instruction | number] | hook-prompt | save SID [instruction] | show SID")
+        sys.exit("usage: handoff.py load --self SID -- [--save instruction | number] | hook-prompt | save SID [instruction] | show SID")
     cmd = argv[0]
     if cmd == "hook-prompt":
         return cmd_hook_prompt()
