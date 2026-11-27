@@ -32,6 +32,18 @@ duplicating manual work.
 The message may be any text, including `/goal resume`. Wakeup does not create,
 resume, or modify Goals. It does not create Handoff snapshots.
 
+## Workspace limit prompt
+
+Codex may show a `Notify owner?` prompt when a workspace member reaches a
+workspace credit or usage limit. This prompt belongs to the interactive TUI and
+does not block Wakeup's `codex queue --resume` delivery. Wakeup waits for the
+usage-limit reset before queueing the message.
+
+If the workspace still has no available credits or a spending limit remains
+active after the reset, Codex cannot execute the queued message. Wakeup cannot
+override workspace billing or spending controls. Choosing `No` in the prompt
+only dismisses the owner notification.
+
 ## Installation
 
 From the repository root, run:

@@ -15,6 +15,11 @@ for the saved session UUID. This skill does not create, resume, or modify
 Codex Goals and does not create Handoff snapshots. It retries only named
 transient queue failures with a bounded backoff. Unknown failures stop safely.
 
+Codex may display a workspace-limit `Notify owner?` prompt in the interactive
+TUI. The prompt does not block the app-server queue used by Wakeup. A queued
+message still requires the workspace limit to reset or the workspace owner to
+restore capacity. Wakeup cannot bypass workspace credits or spending controls.
+
 Treat `$wakeup` as a command only. Do not infer a coding task or continue other
 work when it is invoked. If no command result appears, report that the hook is
 not loaded or trusted and wait for the user to restart the session and trust it.
