@@ -46,7 +46,7 @@ session and sends it after the session reaches a five-hour or weekly usage
 limit and that limit resets. Use `$wakeup <message>` to arm it, `$wakeup` to
 inspect it, and `$wakeup stop` to cancel it. Codex uses `$` to invoke installed
 skills. The implementation uses the
-exact session UUID and the official `codex queue` command. It does not create,
+exact session UUID and the official `codex queue --resume` command. It does not create,
 resume, or modify Goals and does not create Handoff snapshots.
 
 ## Why the implementations are separate

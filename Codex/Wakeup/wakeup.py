@@ -94,6 +94,10 @@ def entry_text(entry):
         lines.append(f"Sent: {entry['sent_at']}")
     if entry.get("last_error"):
         lines.append(f"Last error: {entry['last_error']}")
+    if entry.get("reason"):
+        lines.append(f"Reason: {entry['reason']}")
+    if entry.get("manual_input_at"):
+        lines.append(f"Manual input: {entry['manual_input_at']}")
     if entry.get("next_attempt_at"):
         lines.append(f"Next attempt: {format_time(entry['next_attempt_at'])}")
     return "\n".join(lines)
@@ -142,12 +146,14 @@ def cancel(session_id):
 
 
 def tail_lines(path):
+    if not path:
+        return []
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as handle:
             handle.seek(max(0, size - TAIL_BYTES))
             data = handle.read().decode("utf-8", errors="replace")
-    except OSError:
+    except (OSError, TypeError):
         return []
     lines = data.splitlines()
     if size > TAIL_BYTES and lines:
@@ -155,8 +161,20 @@ def tail_lines(path):
     return lines
 
 
-def latest_rate_limits(path):
-    for line in reversed(tail_lines(path)):
+def parse_event_time(value):
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def rate_limit_records(path):
+    records = []
+    for line in tail_lines(path):
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
@@ -164,8 +182,36 @@ def latest_rate_limits(path):
         payload = event.get("payload") or {}
         limits = payload.get("rate_limits")
         if isinstance(limits, dict):
-            return limits
-    return None
+            records.append((parse_event_time(event.get("timestamp")), limits))
+    return records
+
+
+def latest_rate_limits(path):
+    records = rate_limit_records(path)
+    return records[-1][1] if records else None
+
+
+def user_input_times(path):
+    times = []
+    for line in tail_lines(path):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        payload = event.get("payload") or {}
+        if event.get("type") != "response_item":
+            continue
+        if payload.get("type") != "message" or payload.get("role") != "user":
+            continue
+        event_time = parse_event_time(event.get("timestamp"))
+        if event_time is not None:
+            times.append(event_time)
+    return times
+
+
+def latest_user_input_after(path, timestamp):
+    times = [event_time for event_time in user_input_times(path) if event_time > timestamp]
+    return max(times) if times else None
 
 
 def reached_window(window):
@@ -190,6 +236,18 @@ def reset_for_limits(limits):
     return min(windows) if windows else None
 
 
+def reached_reset_after(path, armed_at):
+    armed_epoch = parse_event_time(armed_at) or 0
+    candidates = []
+    for event_time, limits in rate_limit_records(path):
+        if event_time is None or event_time < armed_epoch:
+            continue
+        reset_at = reset_for_limits(limits)
+        if reset_at is not None:
+            candidates.append(reset_at)
+    return min(candidates) if candidates else None
+
+
 def mark_waiting(session_id, reset_at):
     def mutate(state):
         entry = state["entries"].get(session_id)
@@ -197,6 +255,22 @@ def mark_waiting(session_id, reset_at):
             return
         entry["status"] = "waiting"
         entry["reset_at"] = reset_at
+
+    with_state(mutate)
+
+
+def mark_superseded(session_id, user_input_time):
+    def mutate(state):
+        entry = state["entries"].get(session_id)
+        if not entry or entry.get("status") in ("cancelled", "sent", "superseded"):
+            return
+        entry["status"] = "superseded"
+        entry["superseded_at"] = now_iso()
+        entry["reason"] = (
+            "Manual session input was recorded after the usage-limit reset. "
+            "The wakeup message was skipped to avoid duplicate work."
+        )
+        entry["manual_input_at"] = format_time(user_input_time)
 
     with_state(mutate)
 
@@ -253,6 +327,7 @@ def send_message(entry):
     command = [
         os.environ.get("CODEX_BIN", "codex"),
         "queue",
+        "--resume",
         "--thread",
         entry["session_id"],
         "--message",
@@ -324,12 +399,19 @@ def process_entry(entry, dry_run=False):
         if time.time() < float(entry.get("next_attempt_at") or 0):
             return
     else:
-        limits = latest_rate_limits(entry.get("transcript_path", ""))
-        reset_at = reset_for_limits(limits)
+        reset_at = float(entry.get("reset_at") or 0) or reached_reset_after(
+            entry.get("transcript_path", ""), entry.get("armed_at")
+        )
         if reset_at is None:
             return
         if time.time() < reset_at:
             mark_waiting(entry["session_id"], reset_at)
+            return
+        manual_input_at = latest_user_input_after(
+            entry.get("transcript_path", ""), reset_at
+        )
+        if manual_input_at is not None:
+            mark_superseded(entry["session_id"], manual_input_at)
             return
     if dry_run:
         return

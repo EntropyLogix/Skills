@@ -65,6 +65,29 @@ start_watcher() {
   fi
 }
 
+stop_watcher_process() {
+  local pid_file="$CODEX_DIR/wakeup/watcher.pid"
+  if [ ! -f "$pid_file" ]; then
+    return
+  fi
+  local pid
+  pid="$(cat "$pid_file" 2>/dev/null || true)"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    local attempts=0
+    while [ "$attempts" -lt 20 ] && kill -0 "$pid" 2>/dev/null; do
+      sleep 0.1
+      attempts=$((attempts + 1))
+    done
+  fi
+  rm -f "$pid_file"
+}
+
+restart_watcher() {
+  stop_watcher_process
+  start_watcher
+}
+
 case "${1:-}" in
   "")
     command -v python3 >/dev/null || { echo "python3 is required"; exit 1; }
@@ -73,16 +96,14 @@ case "${1:-}" in
     install -m 0755 "$SRC_DIR/wakeup.py" "$SKILL_DIR/wakeup.py"
     install -m 0644 "$SRC_DIR/SKILL.md" "$SKILL_DIR/SKILL.md"
     edit_hooks install
-    start_watcher
+    restart_watcher
     echo "installed wakeup skill: $SKILL_DIR"
     echo "UserPromptSubmit hook: $HOOK_CMD"
     echo "wakeup watcher: $CODEX_DIR/wakeup/watcher.log"
     echo "open /hooks in Codex to trust the new hook"
     ;;
   --uninstall)
-    if [ -x "$SKILL_DIR/wakeup.py" ]; then
-      python3 "$SKILL_DIR/wakeup.py" stop-watcher || true
-    fi
+    stop_watcher_process
     edit_hooks uninstall
     rm -rf "$SKILL_DIR"
     echo "removed wakeup skill and hook; state remains in $CODEX_DIR/wakeup"
